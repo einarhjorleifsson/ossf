@@ -77,10 +77,10 @@ should actually really be just one function"; "yes, merge them").
 - The fishing rule ossf offers in place of the study's, at the user's word
   (2026-11-25: "lets implement your recommendation as a function in ossf"):
   `os_add_fishing()` (the call) then `os_add_hauls()` (hauls from the call,
-  joined by ground). The fishing step does not call them yet: switching it changes its tables, the maintainer's
-  choice.
+  joined by ground).
 - ossf's `os_add_fishing()` is ossf's own, not ramb's `rb_add_fishing()` under
   the new prefix: the one name in ossf that does not map to its ramb namesake.
 - `os_add_ping_speed()` and `os_calc_speed_smooth()` repeat what
-  `os_add_fishing()` already returns; to drop once the fishing step uses ossf.
+  `os_add_fishing()` already returns. The fishing step no longer calls them
+  (2026-11-25), so they may go; not done, the maintainer's word first.
 - The prefix `os_` and the title are provisional.
