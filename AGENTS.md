@@ -16,8 +16,8 @@ maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 
 ## Three kinds of function
 
-- **ossf's own** (`R/fishing.R`, `haul.R`, `polygon.R`, `trip_value.R`,
-  `time.R`, `score.R`, `map.R`): written for ossf, base R where it can (sf for
+- **ossf's own** (`R/fishing.R`, `haul.R`, `setting.R`, `polygon.R`,
+  `trip_value.R`, `time.R`, `score.R`, `map.R`): written for ossf, base R where it can (sf for
   polygons, ogis for the map, which is only suggested). Edited here.
 - **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb function the flow's steps call, with everything it calls, the C++ included,
   text unchanged but for the names (`rb_` to `os_`). Made by
@@ -44,9 +44,19 @@ should actually really be just one function"; "yes, merge them").
 
 - **No case-study data in this package**, ever: the data are their owners'.
   Tests use simulated tracks (`tests/testthat/helper-sim.R`).
-- **Few principles, simple code.** A clause stays only if an independent
-  witness favours it (an ablation); agreement with a reference's labels is not
-  a reason (the reference is not the truth).
+- **Few principles, simple code.** Two cases, reworded 2026-11-25 at the
+  maintainer's word ("Yes, reword it", after asking whether the rule kept a
+  setting function out and constrained the thinking):
+  - *A clause added to a function that exists* stays only if it earns its
+    place in an ablation (the function scored with and without it); agreement
+    with a reference's labels alone is not a reason (the reference is not the
+    truth). This is the brake on a rule growing clause by clause.
+  - *A new function* (a new thing the package can do) is judged on all the
+    evidence there is: outside witnesses, agreement with other methods, and
+    consistency inside the data (a line is as long hauled as set; every haul
+    has a set). An outside witness is not required, and one that exists is
+    itself checked (Iceland's logged set times were in part computed by the
+    app). Its given values are named on the help page.
 - **Label, never drop.** Every function returns every row it was given, in
   the order given; a value that cannot be judged is `NA` with why.
 - **Every value says where it came from** (a `_basis` or `_from` column).
@@ -54,6 +64,12 @@ should actually really be just one function"; "yes, merge them").
   the help page.
 - Maps are served on this computer only (`127.0.0.1`), never published.
 - Every file says it was drafted with AI assistance (Claude) and when.
+
+- The setting function, at the user's word (2026-11-25: "Think we should put
+  the Haul-witnessed approach as a function in ossf now"): `os_add_setting()`,
+  from fishycode's study
+  `$FISHYDATA/archive/2026-11-25-setting-iceland-longline/` (its README holds
+  what was tried and what was not taken). Held against it again by the study's `scripts/12_ossf_function.R`.
 
 ## Checking
 

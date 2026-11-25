@@ -45,6 +45,15 @@ A copy is never edited here: a change is made at its source and
   interruption of the work, so the vessel stays at its gear). The speeds on
   their own: `os_add_ping_speed()`, `os_calc_speed_smooth()`,
   `os_calc_distance()`; `os_number_runs()`.
+- **Setting (passive gears):** `os_add_setting()`: where and when the gear was
+  set, the later haul as the witness. A position in no haul that lies on the
+  line of a later haul is marked; the vessel's setting speed range is measured
+  from the marked positions; the positions in it are grouped into setting
+  events; and each haul is asked what was last laid under it, a setting event
+  or an earlier haul (gear put back as it is hauled), with the soak. The reach
+  is the gear's scale, picked by vessel where its sets and hauls are most
+  often of one length. `run_in = TRUE` takes the run in to a haul out, for
+  gear hauled on a later visit.
 - **Against a witness:** `os_score()`, every row in one outcome, with recall,
   precision and F1.
 - **On a map, after any step:** `os_map()` draws the pings with what the flow

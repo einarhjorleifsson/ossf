@@ -3,6 +3,7 @@
 export(os_add_fishing)
 export(os_add_hauls)
 export(os_add_ping_speed)
+export(os_add_setting)
 export(os_add_time_utc)
 export(os_add_trip_value)
 export(os_add_voyages)

@@ -18,11 +18,11 @@ differ (\code{rb_} is \code{os_}). They run in DuckDB as ramb's do, and give ram
 }
 }
 \author{
-\strong{Maintainer}: Einar Hjörleifsson \email{einar.hjorleifsson@gmail.com}
+\strong{Maintainer}: Einar Hj<U+00F6>rleifsson \email{einar.hjorleifsson@gmail.com}
 
 Authors:
 \itemize{
-  \item Einar Hjörleifsson \email{einar.hjorleifsson@gmail.com}
+  \item Einar Hj<U+00F6>rleifsson \email{einar.hjorleifsson@gmail.com}
 }
 
 }
