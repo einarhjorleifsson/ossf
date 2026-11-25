@@ -10,10 +10,11 @@ Three kinds of function, told apart on each help page:
 }
 \details{
 \itemize{
-\item \strong{ossf's own}, written for it and kept simple, in base R: \code{\link[=os_add_fishing]{os_add_fishing()}}.
+\item \strong{ossf's own}, written for it and kept simple, in base R where it can: \code{\link[=os_add_fishing]{os_add_fishing()}}, \code{\link[=os_add_hauls]{os_add_hauls()}},
+\code{\link[=os_flag_ping_polygon]{os_flag_ping_polygon()}}, \code{\link[=os_add_trip_value]{os_add_trip_value()}}, \code{\link[=os_add_time_utc]{os_add_time_utc()}}, \code{\link[=os_score]{os_score()}}.
 \item \strong{Copies from ramb}, taken as they are with everything they call (\code{data-raw/copy_from_ramb.R}); only the names
 differ (\code{rb_} is \code{os_}). They run in DuckDB as ramb's do, and give ramb's results. A copy is never edited here.
-\item \strong{Maps}, one call a stage of the flow, drawn by ogis where it is installed.
+\item \strong{Maps}: \code{\link[=os_map]{os_map()}}, the pings after any stage of the flow, drawn by ogis where it is installed.
 }
 }
 \author{

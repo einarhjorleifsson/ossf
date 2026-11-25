@@ -16,9 +16,9 @@ maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 
 ## Three kinds of function
 
-- **ossf's own** (`R/fishing.R`, `polygon.R`, `trip_value.R`, `time.R`,
-  `score.R`, `map.R`): written for ossf, base R where it can (sf for polygons,
-  ogis for the map, which is only suggested). Edited here.
+- **ossf's own** (`R/fishing.R`, `haul.R`, `polygon.R`, `trip_value.R`,
+  `time.R`, `score.R`, `map.R`): written for ossf, base R where it can (sf for
+  polygons, ogis for the map, which is only suggested). Edited here.
 - **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb function the flow's steps call, with everything it calls, the C++ included,
   text unchanged but for the names (`rb_` to `os_`). Made by
   `data-raw/copy_from_ramb.R` from ramb's source (`RAMB_SRC`, default
@@ -74,6 +74,11 @@ should actually really be just one function"; "yes, merge them").
 - Nothing is added to ossf on the way (the maintainer, 2026-11-25: "there should be no
   missing functions in ossf - if there are flag that rather than proceeding
   directly through").
+- The fishing rule ossf offers in place of the study's, at the user's word
+  (2026-11-25: "lets implement your recommendation as a function in ossf"):
+  `os_add_fishing()` (the call) then `os_add_hauls()` (hauls from the call,
+  joined by ground). The fishing step does not call them yet: switching it changes its tables, the maintainer's
+  choice.
 - ossf's `os_add_fishing()` is ossf's own, not ramb's `rb_add_fishing()` under
   the new prefix: the one name in ossf that does not map to its ramb namesake.
 - `os_add_ping_speed()` and `os_calc_speed_smooth()` repeat what

@@ -9,7 +9,7 @@ fisheries (the maintainer, 2026-11-25).
 ## Three kinds of function
 
 - **ossf's own**, written for it and kept simple, in base R (sf for the
-  polygons): `os_add_fishing()`, `os_flag_ping_polygon()`,
+  polygons): `os_add_fishing()`, `os_add_hauls()`, `os_flag_ping_polygon()`,
   `os_add_trip_value()`, `os_add_time_utc()`, `os_score()`, and the map,
   `os_map()`.
 - **Copies from ramb**, taken as they are with everything they call, the
@@ -38,7 +38,11 @@ A copy is never edited here: a change is made at its source and
   `os_add_trip_value()`, a trip's time, gear or port from ranked witnesses.
 - **Fishing:** `os_add_fishing()`: a ping is fishing when the vessel's
   smoothed speed is within its working speed range, the range given, measured
-  from a witness, or estimated from the vessel's own speeds. The speeds on
+  from a witness, or estimated from the vessel's own speeds.
+  `os_add_hauls()`: the fishing pings grouped into hauls afterwards, the call
+  never changed; two runs of fishing pings are one haul where the stretch
+  between them covers no more ground than the shorter run (a pause is an
+  interruption of the work, so the vessel stays at its gear). The speeds on
   their own: `os_add_ping_speed()`, `os_calc_speed_smooth()`,
   `os_calc_distance()`; `os_number_runs()`.
 - **Against a witness:** `os_score()`, every row in one outcome, with recall,
@@ -87,4 +91,4 @@ package; its tests use simulated tracks.
 
 ## Not in it
 
-Setting and soak; hauls as events; gear from the track; effort and catch.
+Setting and soak; gear from the track; effort and catch.
