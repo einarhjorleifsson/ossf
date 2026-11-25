@@ -1,0 +1,8 @@
+.DS_Store
+.Rproj.user/
+.Rhistory
+.RData
+# compiled by load_all() or R CMD INSTALL, never tracked
+src/*.o
+src/*.so
+src/*.dll

@@ -1,0 +1,40 @@
+Package: ossf
+Type: Package
+Title: From Vessel Tracks to Fishing
+Version: 2026.11.25
+Authors@R: person("Einar", "Hjörleifsson", role = c("aut", "cre"), email = "einar.hjorleifsson@gmail.com")
+Description: The steps from a vessel's pings to its fishing: the time put
+    on UTC, the pings flagged (every ping in one outcome), port calls, trips,
+    and fishing, a ping fishing when the vessel's smoothed speed is within its
+    working speed range (given, measured from a witness, or estimated from the
+    vessel's own speeds); a score against a witness, and a map of the pings
+    after any step. Some functions are ossf's own; others are copied from the
+    'ramb' package as they are, the names changed.
+License: GPL (>= 3)
+Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
+Imports:
+    DBI,
+    dbplyr,
+    dplyr,
+    duckdb,
+    Rcpp,
+    rlang,
+    sf,
+    stats,
+    tibble,
+    utils
+LinkingTo:
+    Rcpp
+Suggests:
+    data.table,
+    lwgeom,
+    matrixStats,
+    ogis,
+    ramb,
+    s2,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.1.0

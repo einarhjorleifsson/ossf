@@ -1,0 +1,1300 @@
+# Copied from ramb 2026.11.24 (b777ac4), R/ping.R, by data-raw/copy_from_ramb.R: do not edit here.
+# The text is ramb's, with the names changed (rb_ to os_); a change is made in ramb and the copy made again.
+
+# Column arguments ---------------------------------------------------------------
+# The functions work on the grammar's names (vid, time, lon, lat). A caller with other names passes them
+# (`vid = vessel_id`); they are renamed in, and back out on the result.
+.os_cols <- function(...) {
+  q <- rlang::enquos(...)
+  vapply(q, rlang::as_name, character(1))
+}
+
+.os_std_in <- function(x, map) {
+  ren <- map[map != names(map)]
+  if (!length(ren)) {
+    return(x)
+  }
+  clash <- intersect(names(ren), colnames(x))
+  if (length(clash)) {
+    stop(
+      "Column(s) ",
+      paste(clash, collapse = ", "),
+      " already exist; rename them first.",
+      call. = FALSE
+    )
+  }
+  dplyr::rename(x, !!!rlang::syms(ren))
+}
+
+.os_std_out <- function(x, map) {
+  ren <- map[map != names(map)]
+  if (!length(ren)) {
+    return(x)
+  }
+  dplyr::rename(x, !!!stats::setNames(rlang::syms(names(ren)), ren))
+}
+
+# A column of NAs of a type: in DuckDB a bare NULL (dbplyr's NA) is of type NULL, which the lazy route cannot give
+# back as it was.
+.os_na_col <- function(x, nm, type = c("VARCHAR", "DOUBLE")) {
+  type <- match.arg(type)
+  v <- if (inherits(x, "tbl_lazy")) {
+    dplyr::sql(sprintf("CAST(NULL AS %s)", type))
+  } else if (type == "VARCHAR") {
+    NA_character_
+  } else {
+    NA_real_
+  }
+  dplyr::mutate(x, !!nm := !!v)
+}
+
+.os_flag_init <- function(x) {
+  if (!"ping_flag" %in% colnames(x)) {
+    x <- .os_na_col(x, "ping_flag")
+  }
+  if (!"ping_flag_basis" %in% colnames(x)) {
+    # a flag made before the basis existed (ramb before 2026.11.04) has none
+    x <- .os_na_col(x, "ping_flag_basis")
+  }
+  x
+}
+
+# The methods withdrawn by fishycode plan 062 (Decided k, 2026-11-04): each warns once per session, and goes in the
+# next release. Their scores on ramb's planted faults are in fishycode's decision 276.
+.os_withdrawn_method <- function(method) {
+  key <- paste0("os_flag_ping_impossible:", method)
+  if (!isTRUE(.os_warned[[key]])) {
+    assign(key, TRUE, envir = .os_warned)
+    rlang::warn(
+      sprintf(
+        "`os_flag_ping_impossible(method = \"%s\")` will be removed in the next release; use \"clean\", \"forward\" or \"local\".",
+        method
+      ),
+      class = "ramb_withdrawn"
+    )
+  }
+  invisible(NULL)
+}
+
+# Lazy tables: label in batches of whole vessels, write them whole ---------------------------------
+# For rules that are sequential along a track and so cannot run in DuckDB itself. Each batch of whole vessels is
+# collected, sorted in a total order (vessel, time, lon, lat, then every other column), labelled in R by `fun` (a
+# data-frame function that updates `ping_flag` and may add columns), and written whole to a temporary parquet file,
+# each input column cast back to its type; the result reads those files, still lazy. The pings with no vessel are
+# written unlabelled. The files live until the R session ends.
+#
+# Until 2026.11.04 only the labels were written, and joined back to the input by each ping's row number within its
+# vessel: on a year of 72 M pings the join, a window per flagger, cost more than the flagging (fishycode plan 062,
+# step 1 test (ii): 155 s against 123 s), and two copies alike in every sorted column could swap labels between the
+# routes. A table with a column R cannot carry and give back as it was (a list, a struct, a blob, a time of day) still
+# goes that way. `cols` and `order_by` serve that route only; `extra` names the columns `fun` adds there.
+.os_round_trip_types <- paste0(
+  "^(BOOLEAN|TINYINT|SMALLINT|INTEGER|BIGINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|FLOAT|DOUBLE|DECIMAL\\(.*\\)|",
+  "VARCHAR|DATE|TIMESTAMP|TIMESTAMP WITH TIME ZONE|TIMESTAMP_S|TIMESTAMP_MS|ENUM\\(.*\\))$"
+)
+
+.os_label_lazy <- function(
+  x,
+  fun,
+  cols,
+  order_by,
+  batch_pings = 5e6,
+  what = "label",
+  extra = character(0)
+) {
+  con <- dbplyr::remote_con(x)
+  schema <- DBI::dbGetQuery(con, paste("DESCRIBE", .os_sql(x)))
+  if (!all(grepl(.os_round_trip_types, schema$column_type))) {
+    return(.os_label_lazy_join(
+      x,
+      fun,
+      cols,
+      order_by,
+      batch_pings,
+      what,
+      extra
+    ))
+  }
+  vn <- x |>
+    dplyr::filter(!is.na(vid)) |>
+    dplyr::count(vid) |>
+    dplyr::collect() |>
+    dplyr::arrange(dplyr::desc(n))
+  if (!nrow(vn)) {
+    stop(what, ": the table has no vessels.", call. = FALSE)
+  }
+  batches <- split(vn$vid, cumsum(as.numeric(vn$n)) %/% batch_pings)
+  dir <- tempfile("rb_labels_")
+  dir.create(dir)
+  q <- function(nm) DBI::dbQuoteIdentifier(con, nm)
+  # each input column as it was: a time with a zone comes back from R as UTC
+  cast <- function(nm, type) {
+    if (type == "TIMESTAMP WITH TIME ZONE") {
+      sprintf("timezone('UTC', CAST(%s AS TIMESTAMP)) AS %s", q(nm), q(nm))
+    } else {
+      sprintf("CAST(%s AS %s) AS %s", q(nm), type, q(nm))
+    }
+  }
+  sel_in <- paste(
+    mapply(cast, schema$column_name, schema$column_type),
+    collapse = ", "
+  )
+  added <- NULL
+  for (i in seq_along(batches)) {
+    d <- x |>
+      dplyr::filter(vid %in% !!batches[[i]]) |>
+      dplyr::collect()
+    d <- as.data.frame(d)
+    d <- d[.os_total_order(d), , drop = FALSE]
+    out <- fun(d)
+    if (is.null(added)) {
+      added <- setdiff(names(out), schema$column_name)
+    }
+    out <- out[, c(schema$column_name, added), drop = FALSE]
+    nm <- paste0("rb_lab_", i)
+    # Register, write with COPY on the same connection, release: a frame left registered in a loop
+    # accumulates (fishycode R/write_parquet.R: 48 GB spilled before that was found).
+    duckdb::duckdb_register(con, nm, out)
+    DBI::dbExecute(
+      con,
+      sprintf(
+        "COPY (SELECT %s%s FROM %s) TO '%s' (FORMAT parquet)",
+        sel_in,
+        if (length(added)) {
+          paste0(", ", paste(q(added), collapse = ", "))
+        } else {
+          ""
+        },
+        nm,
+        file.path(dir, sprintf("b%05d.parquet", i))
+      )
+    )
+    duckdb::duckdb_unregister(con, nm)
+  }
+  # the pings with no vessel, unlabelled, the added columns typed as the batches wrote them
+  types <- DBI::dbGetQuery(
+    con,
+    sprintf(
+      "DESCRIBE SELECT * FROM read_parquet('%s')",
+      file.path(dir, "b00001.parquet")
+    )
+  )
+  types <- stats::setNames(types$column_type, types$column_name)
+  DBI::dbExecute(
+    con,
+    sprintf(
+      "COPY (SELECT * %s FROM (%s) WHERE vid IS NULL) TO '%s' (FORMAT parquet)",
+      paste0(
+        vapply(
+          added,
+          function(a) sprintf(", CAST(NULL AS %s) AS %s", types[[a]], q(a)),
+          ""
+        ),
+        collapse = ""
+      ),
+      .os_sql(x),
+      file.path(dir, "novid.parquet")
+    )
+  )
+  dplyr::tbl(
+    con,
+    dplyr::sql(sprintf("SELECT * FROM read_parquet('%s/*.parquet')", dir))
+  )
+}
+
+# A total order of a batch: by vessel, time, lon and lat, and where two pings are alike in all four, by every other
+# column. Only the ties are sorted on the other columns, which on a year of AIS are few: sorting every row of a 5 M-ping
+# batch on 22 columns cost seconds a pass.
+.os_total_order <- function(d) {
+  front <- c("vid", "time", "lon", "lat")
+  o <- do.call(order, c(unname(as.list(d[front])), method = "radix"))
+  n <- length(o)
+  if (n < 2) {
+    return(o)
+  }
+  same <- rep(TRUE, n - 1)
+  for (k in front) {
+    v <- d[[k]][o]
+    same <- same & ((v[-1] == v[-n]) %in% TRUE | (is.na(v[-1]) & is.na(v[-n])))
+  }
+  if (!any(same)) {
+    return(o)
+  }
+  # the runs of ties, each sorted on the other columns
+  grp <- cumsum(c(TRUE, !same))
+  idx <- which(grp %in% grp[c(same, FALSE) | c(FALSE, same)])
+  sub <- d[o[idx], setdiff(names(d), front), drop = FALSE]
+  r <- do.call(order, c(list(grp[idx]), unname(as.list(sub)), method = "radix"))
+  o[idx] <- o[idx][r]
+  o
+}
+
+# The route of ramb before 2026.11.04, for a table with a column R cannot give back as it was: the labels written
+# alone, and joined back by each ping's row number within its vessel, in `order_by` order, numbered the same way in
+# DuckDB and in the batch.
+.os_label_lazy_join <- function(
+  x,
+  fun,
+  cols,
+  order_by,
+  batch_pings = 5e6,
+  what = "label",
+  extra = character(0)
+) {
+  con <- dbplyr::remote_con(x)
+  ob <- rlang::syms(order_by)
+  keyed <- x |>
+    dplyr::group_by(vid) |>
+    dbplyr::window_order(!!!ob) |>
+    dplyr::mutate(.rb_rn = dplyr::row_number()) |>
+    dplyr::ungroup()
+  vn <- x |>
+    dplyr::count(vid) |>
+    dplyr::collect() |>
+    dplyr::arrange(dplyr::desc(n))
+  if (!nrow(vn)) {
+    stop(what, ": the table has no vessels.", call. = FALSE)
+  }
+  labs <- c("ping_flag", "ping_flag_basis", extra)
+  batches <- split(vn$vid, cumsum(as.numeric(vn$n)) %/% batch_pings)
+  dir <- tempfile("rb_labels_")
+  dir.create(dir)
+  for (i in seq_along(batches)) {
+    g <- batches[[i]]
+    d <- x |>
+      dplyr::filter(vid %in% g) |>
+      dplyr::select(dplyr::all_of(unique(c(
+        "vid",
+        cols,
+        intersect(labs, colnames(x))
+      )))) |>
+      dplyr::group_by(vid) |>
+      dbplyr::window_order(!!!ob) |>
+      dplyr::mutate(.rb_rn = dplyr::row_number()) |>
+      dplyr::ungroup() |>
+      dplyr::collect() |>
+      dplyr::arrange(vid, !!!ob)
+    lab <- fun(d)[, c("vid", ".rb_rn", labs)]
+    lab$.rb_rn <- as.numeric(lab$.rb_rn)
+    nm <- paste0("rb_lab_", i)
+    duckdb::duckdb_register(con, nm, lab)
+    DBI::dbExecute(
+      con,
+      sprintf(
+        "COPY %s TO '%s' (FORMAT parquet)",
+        nm,
+        file.path(dir, sprintf("b%05d.parquet", i))
+      )
+    )
+    duckdb::duckdb_unregister(con, nm)
+  }
+  labels <- dplyr::tbl(
+    con,
+    dplyr::sql(sprintf("SELECT * FROM read_parquet('%s/*.parquet')", dir))
+  )
+  keyed |>
+    dplyr::select(-dplyr::any_of(labs)) |>
+    dplyr::left_join(labels, by = c("vid", ".rb_rn")) |>
+    dplyr::select(-".rb_rn") |>
+    dbplyr::window_order()
+}
+
+#' Flag invalid ping positions
+#'
+#' Step 0 of the fishing-activity flow. A position that is a placeholder, not a fix, is flagged
+#' `"invalid"` in `ping_flag`, unless the row already carries a flag. No row is dropped.
+#'
+#' @param x A data frame or a lazy DuckDB table with `lon` and `lat`.
+#' @param rules Which tests to apply: `"lon_eq_lat"` (longitude equal to latitude, which also catches
+#'   0, 0; a feed that wrote the latitude into the longitude), `"out_of_range"` (|lon| > 180 or
+#'   |lat| > 90), and, not by default, `"after_receipt"`: a ping cannot be received before it is made, so one
+#'   stamped more than `ahead_s` after its `receipt` comes from a clock that runs fast, flagged `"after receipt"`
+#'   (fishycode plan 060 §8; Iceland's STK holds 266 thousand pings of 2009 stamped over a minute after their
+#'   receipt). A clock a second or two fast is common and harmless.
+#' @param lon,lat The position columns, if not named `lon` and `lat`.
+#' @param time,receipt For `"after_receipt"`: the ping's time and the time it was received (date-times).
+#' @param ahead_s For `"after_receipt"`: seconds after the receipt that are tolerated.
+#'
+#' @return `x` with `ping_flag` and `ping_flag_basis` added or updated (`"recorded"`: the ping's own values decide):
+#'   the same type, the same rows.
+#' @family flag pings
+#' @export
+#'
+os_flag_ping_invalid <- function(
+  x,
+  rules = c("lon_eq_lat", "out_of_range"),
+  lon = lon,
+  lat = lat,
+  time = time,
+  receipt = receipt,
+  ahead_s = 60
+) {
+  rules <- match.arg(
+    rules,
+    c("lon_eq_lat", "out_of_range", "after_receipt"),
+    several.ok = TRUE
+  )
+  aft <- "after_receipt" %in% rules
+  .os_check_input(
+    x,
+    "os_flag_ping_invalid",
+    cols = c(
+      lon = rlang::as_name(rlang::enquo(lon)),
+      lat = rlang::as_name(rlang::enquo(lat))
+    ),
+    also = if (aft) {
+      c(
+        time = rlang::as_name(rlang::enquo(time)),
+        receipt = rlang::as_name(rlang::enquo(receipt))
+      )
+    } else {
+      character(0)
+    },
+    types = c(
+      lon = "numeric",
+      lat = "numeric",
+      if (aft) c(time = "time", receipt = "time")
+    )
+  )
+  stopifnot(is.numeric(ahead_s), length(ahead_s) == 1, ahead_s >= 0)
+  map <- .os_cols(lon = {{ lon }}, lat = {{ lat }})
+  if (aft) {
+    map <- c(map, .os_cols(time = {{ time }}, receipt = {{ receipt }}))
+  }
+  x <- .os_flag_init(.os_std_in(x, map))
+  eq <- "lon_eq_lat" %in% rules
+  oor <- "out_of_range" %in% rules
+  # seconds after the receipt, in each engine's own arithmetic
+  if (aft) {
+    x <- if (inherits(x, "tbl_lazy")) {
+      dplyr::mutate(x, .rb_after = dplyr::sql("epoch(time) - epoch(receipt)"))
+    } else {
+      dplyr::mutate(x, .rb_after = as.numeric(time) - as.numeric(receipt))
+    }
+  } else {
+    x <- dplyr::mutate(x, .rb_after = NA_real_)
+  }
+  # the ping's own recorded values decide: basis "recorded"
+  x <- dplyr::mutate(
+    x,
+    .rb_new = dplyr::case_when(
+      !is.na(ping_flag) ~ NA_character_,
+      !!eq & lon == lat ~ "invalid",
+      !!oor & (abs(lon) > 180 | abs(lat) > 90) ~ "invalid",
+      !!aft & !is.na(.rb_after) & .rb_after > !!ahead_s ~ "after receipt",
+      TRUE ~ NA_character_
+    ),
+    ping_flag_basis = dplyr::if_else(
+      is.na(.rb_new),
+      ping_flag_basis,
+      "recorded"
+    ),
+    ping_flag = dplyr::coalesce(ping_flag, .rb_new)
+  )
+  x <- dplyr::select(x, -".rb_after", -".rb_new")
+  .os_std_out(x, map)
+}
+
+#' Flag a copy of a report
+#'
+#' Step 0 of the fishing-activity flow. A report a vessel's track holds twice is flagged in `ping_flag`, with what
+#' decided it in `ping_flag_basis`. Only rows not yet flagged are tested, and they are not used as anchors. No row is
+#' dropped.
+#'
+#' Two rules, the second with a recorded speed (fishycode plan 062's cascade: each copy is decided by the best
+#' evidence there is):
+#'
+#' * **Across feeds, at one time.** When several feeds (a national AIS network and a commercial one) report the
+#'   same fix, the lower-priority feed's copy is `"duplicate"` (basis `"priority"`): a ping of the same vessel from a
+#'   higher-priority feed lies within `max_dt_s` seconds and the distance `kn_max` covers in that time, among the
+#'   `n_neighbours` neighbours on each side in time order.
+#' * **One report twice, at any time** (with `speed`, and `course` where the feed has it). A copy repeats a report's
+#'   position (within `copy_m` metres), its recorded speed (exactly) and its course (within 0.5 degrees); a vessel
+#'   that passes the same place again does not repeat its speed and course to the decimal. Pings moving under 1 knot
+#'   are not compared. Of such a pair, in one feed and `near_s` seconds apart or less, the later is `"duplicate"`
+#'   (basis `"recorded"`): the report sent twice. In two feeds, the lower-priority feed's (basis `"priority"`):
+#'   `"duplicate"` within `max_dt_s` of the other, else `"shifted"`, a copy stamped at another time. In one feed
+#'   further apart, which one is the copy is decided by a second feed, a witness that places the vessel at one of
+#'   them (a ping of another feed within 120 s and 300 m plus what its recorded speed covers in the time between): the
+#'   other is `"shifted"` (basis `"witness"`). The pairs of one run, one vessel at one shift, are decided together,
+#'   and only when every pair that a witness decides agrees. Otherwise both pings stay, unflagged, and
+#'   `ping_repeat_dt_s` gives each the seconds to the other: a label, not a removal. On one feed with no time of
+#'   receipt, which of two identical reports is the copy is not in the data; the track around is no witness, since
+#'   where copies are many it fits the copy as well as the true ping (fishycode decision 276).
+#'
+#' Take the copies out before [os_flag_ping_impossible()]: a true ping between two copies looks as wrong as a copy,
+#' and on ramb's planted faults the copies were most of the good fishing pings its `"local"` method took.
+#'
+#' @param x A data frame or a lazy DuckDB table with `vid`, `time`, `lon`, `lat` and the feed column.
+#' @param priority The feeds, highest priority first. A feed not listed ranks last. No default: the
+#'   order is a judgement about the feeds. It may be left out where the data hold one feed.
+#' @param feed The column naming the feed.
+#' @param max_dt_s,kn_max,n_neighbours Seconds apart, speed in knots that sets the distance, neighbours compared.
+#' @param speed,course The columns of the recorded speed over ground (knots) and course over ground (degrees), for the
+#'   second rule. Default `NULL`: the first rule only. A speed of 102.3 knots or more counts as none.
+#' @param copy_m,near_s For the second rule: how far apart two reports may lie and still be one (metres), and how
+#'   far apart in time a report sent twice in one feed may be (seconds).
+#' @param vid,time,lon,lat The columns, if named otherwise.
+#' @param batch_pings For a lazy table: pings per batch.
+#'
+#' @return `x` with `ping_flag` and `ping_flag_basis` added or updated, and with `speed`, `ping_repeat_dt_s`: the same
+#'   type, the same rows.
+#' @family flag pings
+#' @export
+#'
+os_flag_ping_duplicate <- function(
+  x,
+  priority,
+  feed = provider,
+  max_dt_s = 10,
+  kn_max = 25,
+  n_neighbours = 3,
+  speed = NULL,
+  course = NULL,
+  copy_m = 20,
+  near_s = 2,
+  vid = vid,
+  time = time,
+  lon = lon,
+  lat = lat,
+  batch_pings = 5e6
+) {
+  speed_quo <- rlang::enquo(speed)
+  course_quo <- rlang::enquo(course)
+  has_speed <- !rlang::quo_is_null(speed_quo)
+  has_course <- !rlang::quo_is_null(course_quo)
+  if (has_course && !has_speed) {
+    stop(
+      "`course` is read with `speed`, by the rule for one report twice.",
+      call. = FALSE
+    )
+  }
+  .os_check_input(
+    x,
+    "os_flag_ping_duplicate",
+    cols = c(
+      vid = rlang::as_name(rlang::enquo(vid)),
+      time = rlang::as_name(rlang::enquo(time)),
+      lon = rlang::as_name(rlang::enquo(lon)),
+      lat = rlang::as_name(rlang::enquo(lat))
+    ),
+    also = c(
+      feed = rlang::as_name(rlang::enquo(feed)),
+      if (has_speed) c(speed = rlang::as_name(speed_quo)),
+      if (has_course) c(course = rlang::as_name(course_quo))
+    ),
+    types = c(
+      time = "time",
+      lon = "numeric",
+      lat = "numeric",
+      if (has_speed) c(speed = "numeric"),
+      if (has_course) c(course = "numeric")
+    )
+  )
+  .os_warn_unharmonised(x, "os_flag_ping_duplicate")
+  map <- .os_cols(
+    vid = {{ vid }},
+    time = {{ time }},
+    lon = {{ lon }},
+    lat = {{ lat }},
+    feed = {{ feed }}
+  )
+  if (has_speed) {
+    map <- c(map, speed = rlang::as_name(speed_quo))
+  }
+  if (has_course) {
+    map <- c(map, course = rlang::as_name(course_quo))
+  }
+  if (missing(priority)) {
+    fc <- map[["feed"]]
+    feeds <- if (inherits(x, "tbl_lazy")) {
+      dplyr::pull(dplyr::distinct(dplyr::select(x, dplyr::all_of(fc))), 1)
+    } else {
+      unique(x[[fc]])
+    }
+    feeds <- stats::na.omit(as.character(feeds))
+    if (length(feeds) > 1) {
+      stop(
+        "`priority` is required: the feeds, highest priority first.",
+        call. = FALSE
+      )
+    }
+    priority <- feeds
+  }
+  x <- .os_flag_init(.os_std_in(x, map))
+  if (has_speed && !"ping_repeat_dt_s" %in% colnames(x)) {
+    x <- .os_na_col(x, "ping_repeat_dt_s", "DOUBLE")
+  }
+  fun <- function(d) {
+    i <- which(is.na(d$ping_flag))
+    if (!length(i)) {
+      return(d)
+    }
+    dup <- .os_whack_duplicates(
+      d$vid[i],
+      d$time[i],
+      d$lon[i],
+      d$lat[i],
+      d$feed[i],
+      priority = priority,
+      max_dt_s = max_dt_s,
+      kn_max = kn_max,
+      n = n_neighbours
+    )
+    d$ping_flag[i[dup]] <- "duplicate"
+    d$ping_flag_basis[i[dup]] <- "priority"
+    if (has_speed) {
+      # every ping unflagged before this call, the cross-feed copies just flagged included: a copy at its own time
+      # is a witness to where the vessel was
+      cp <- .os_whack_copies(
+        d$vid[i],
+        d$time[i],
+        d$lon[i],
+        d$lat[i],
+        d$feed[i],
+        priority = priority,
+        speed = d$speed[i],
+        course = if (has_course) d$course[i],
+        copy_m = copy_m,
+        near_s = near_s,
+        max_dt_s = max_dt_s
+      )
+      new <- is.na(d$ping_flag[i]) & !is.na(cp$flag)
+      d$ping_flag[i[new]] <- cp$flag[new]
+      d$ping_flag_basis[i[new]] <- cp$basis[new]
+      r <- is.na(d$ping_flag[i]) & !is.na(cp$repeat_dt_s)
+      d$ping_repeat_dt_s[i[r]] <- cp$repeat_dt_s[r]
+    }
+    d
+  }
+  x <- if (inherits(x, "tbl_lazy")) {
+    .os_label_lazy(
+      x,
+      fun,
+      cols = c(
+        "time",
+        "lon",
+        "lat",
+        "feed",
+        if (has_speed) "speed",
+        if (has_course) "course"
+      ),
+      order_by = c("time", "lon", "lat", "feed"),
+      batch_pings = batch_pings,
+      what = "os_flag_ping_duplicate()",
+      extra = if (has_speed) "ping_repeat_dt_s" else character(0)
+    )
+  } else {
+    fun(x)
+  }
+  .os_std_out(x, map)
+}
+
+#' Flag positions no vessel could have reached
+#'
+#' Step 0 of the fishing-activity flow. A position or jump that implies an impossible speed is flagged
+#' in `ping_flag` with the stage that caught it, and in `ping_flag_basis` with the evidence that judged it. Only
+#' rows not yet flagged are tested, so invalid and duplicate pings never serve as anchors. No row is dropped.
+#'
+#' Which method: with a recorded speed over ground, `"local"`, given the column (`speed = `). On ramb's planted
+#' faults (`ramb::rb_read_example("dansk_planted")`) it caught the most wrong positions at every ping rate from 10 s to
+#' 1 h, out-and-backs under `kn_max` included, and kept the truly fast vessels, which every fixed limit flags. Its
+#' cost in good fishing pings is the copies of reports interleaved with the track, so take them out first
+#' ([os_flag_ping_duplicate()] with `speed`). Without a recorded speed, `"local"` judges at the fixed limit and still
+#' caught more than `"clean"` and `"forward"` at every rate; of those two, neither is best everywhere: `"clean"`
+#' erodes good pings beside a fault it cannot resolve, `"forward"` loses a stretch when the first ping after a gap is
+#' wrong (fishycode plan 062 step 3, decision 276).
+#'
+#' Every method but `"sda"` ends in a forward scan, which keeps the last ping it kept as its anchor and blames the
+#' next ping it cannot reach, and every ping after until the vessel could have covered the jump. When the anchor is
+#' the wrong one (a port event placed off the berth, a copy of a report written at another time), the good pings after
+#' it are flagged for it. With `anchor = "vote"` the pings after the jump decide which end is wrong: of the `vote_n`
+#' (5) pings after it, those that can be reached from the next ping and not from the anchor against those the
+#' reverse; where they tie, the anchor's detour between its neighbours against the next ping's (more than twice it
+#' plus `detour_m`, 50 m). An anchor found wrong is flagged in its place (`"anchor"`, `"local_anchor"`), provided the
+#' leg that skips it is possible. On `dansk_truth` (fishycode plan 066) it caught more wrong positions and flagged
+#' fewer good pings than the default for every method (`"local"` with the vessels' own limits: 55.0 % caught against
+#' 52.7, 2,385 good pings flagged against 2,681); its cost is a run of consistent wrong pings before a silence long
+#' enough that the leg skipping a good anchor covers it (4 of the 10 planted relocations `"local"` caught at 6 min).
+#'
+#' Two opt-in arguments serve a track merged from several feeds (a national AIS network and a commercial
+#' one, terrestrial and satellite, AIS and VMS). Their defaults leave the rule as it was.
+#'
+#' * `feed` and `noise_nm`: two feeds that both report a vessel place it a few hundred metres apart, and a
+#'   few seconds apart that reads as an impossible speed. With `feed`, a leg between pings of *different*
+#'   feeds no longer than `noise_nm` is never impossible, at every stage; a leg inside one feed, or a
+#'   cross-feed leg beyond `noise_nm`, is judged as before.
+#' * `evidence = TRUE`: the columns that let a flag be audited. For each ping this call flagged, the legs
+#'   to the nearest ping on each side that is *not* flagged (the track that is left, so a run of flagged
+#'   pings is judged against the pings that stay):
+#'   `ping_flag_prev_dt_s`, `ping_flag_prev_dist_m` and, with `feed`, `ping_flag_prev_feed`, and the same
+#'   with `next`; and `ping_flag_side`, which of the two legs is impossible on the rule above (a leg
+#'   within the noise floor, or longer than `max_gap_h`, is not): `"prev"`, `"next"`, `"both"`, or
+#'   `"none"` when neither is (the flag came from the rms speed or the angle of the ping, or the ping has
+#'   no neighbour on that side). For `"local"` a leg is impossible on its own limit, at the local speed the ping was
+#'   judged by, which is `ping_flag_speed_kn` (`NA` under the fixed limit). The columns are `NA` for pings this call
+#'   did not flag.
+#'
+#' @param x A data frame or a lazy DuckDB table with `vid`, `time`, `lon` and `lat`.
+#' @param method The rule:
+#'   * `"clean"` (default): a two-stage filter at the fixed limit `kn_max`: speed-distance-angle ("vmask",
+#'     "spike"), which judges each ping from both sides, the algorithm of `argosfilter::sdafilter()` (Freitas et al.
+#'     2008) re-implemented in C++; then a forward scan against the last kept ping ("forward"), which resolves runs
+#'     and interleaved streams.
+#'   * `"forward"`: the forward scan alone ("forward"): each ping is judged against the last
+#'     *retained* ping, so consecutive clusters are caught.
+#'   * `"local"`: each leg judged against the vessel's own speed, from its recorded speed over ground (`speed`), with
+#'     no heading. The local speed of a ping is the larger of the median recorded speed of the `k` pings before (5)
+#'     and that of the `k` after, its own counted on each side (`local_speed`); a leg is impossible when longer than
+#'     `margin_m` (50 m) plus `factor` (1.5) times the local speed plus `margin_kn` (5 knots), times its time step. Where no ping near has a recorded speed, the limit is `margin_m`
+#'     plus `kn_max` times the time step (basis `"track"`). Two stages: a ping whose two legs are both impossible
+#'     while the leg that skips it is not ("local_spike"; the first and last ping of a track or of a stretch after a
+#'     gap: their one leg), repeated on the pings left; then a forward scan with the same limit ("local_forward").
+#'     The constants are set by hand, passed in `...` (`k`, `factor`, `margin_kn`, `margin_m`).
+#'   * `"sda"`, `"fwdbwd"` and `"sequential"`: withdrawn; they warn, and go in the next release. `"sda"` is
+#'     `"clean"`'s first stage alone; `"fwdbwd"` a ping too fast both from the previous and to the next; `"sequential"`
+#'     equals `"forward"` at 30 times its time.
+#' @param kn_max Speed threshold, knots: the fixed limit (for `"local"`, where no recorded speed is near).
+#' @param min_dt_s A time step shorter than this counts as this many seconds.
+#' @param max_gap_h For `"clean"` and `"forward"`: after a gap longer than this the scan restarts.
+#' @param ... Passed to the method (`k`, `factor`, `margin_kn` and `margin_m` for `"local"`; `ang`, `distlim` for
+#'   `"clean"`'s first stage); with `anchor = "vote"`, its constants `vote_n` (5 pings) and `detour_m` (50 m). The
+#'   arguments after `...` must be named in full, so that a constant here (`k`) is never taken for `kn_max`.
+#' @param feed The column naming the feed of each ping, for the noise floor `noise_nm`. Default `NULL`: no
+#'   floor. A ping with no feed (`NA`) never takes part in it. Not for `"fwdbwd"` and `"sequential"`.
+#' @param noise_nm The noise floor between feeds, nautical miles (1852 m). Only with `feed`.
+#' @param speed For `"local"`: the column of the recorded speed over ground, knots (`NA` where none; below 0 or 102.3
+#'   or more counts as none, AIS's "not available"). Default `NULL`: none, and every leg is judged at the fixed
+#'   limit.
+#' @param stream The column naming each ping's stream (a feed, or a part of one on its own clock). Given, each
+#'   vessel's streams are judged apart: no leg, scan, vote or piece of evidence joins two streams, so two clocks
+#'   that differ never read as distance, and the warning on unharmonised clocks is not given. `limits` may then be by
+#'   vessel, or by vessel and stream. Default `NULL`: a vessel's streams judged together, as before. For every method.
+#'   It may name the same column as `feed` (`feed = feed, stream = feed`, each feed a stream of its own). On
+#'   `dansk_truth` (fishycode plan 068; `"local"` with the own limits, the recorded speed and the vote) it halves
+#'   the good pings flagged beside a fault (110 to 57 in 10,000 at 1 min, 508 to 270 at 6 min) for 6-7 points of the
+#'   wrong positions caught: the planted ties, two reports of one time in two streams, show only on legs between
+#'   them.
+#' @param limits For `"local"`: each vessel's own limits, the table of [os_create_ping_limits()] for these pings (by
+#'   vessel, or by vessel and stream: its keys must be columns of `x`). A leg is impossible when longer than twice the
+#'   noise plus the speed times its time step (at least `min_dt_s`) and the time error (the larger of the stream's grain
+#'   and its measured error), the speed the recorded one near, by `factor` and `margin_kn`, or else the vessel's
+#'   ceiling (basis `"ceiling"`); of a leg's two ends, the larger limits. A vessel the table lacks is judged as without
+#'   it. Default `NULL`: the fixed `kn_max`, `margin_m` and no time error, as before. On `dansk_truth` (fishycode plan
+#'   065 step 4), without a recorded speed it caught 53 % of the wrong positions at 1 min and 52 % at 6 min (`"clean"`
+#'   at 25 kn: 56 and 45 %), flagging 17 good pings in 10,000 of its own at 1 min (`"clean"`: 45) and 79 at 6 min (29),
+#'   where a vessel's recorded ceiling misses its fastest stretches; with the recorded speed, against `"local"`
+#'   without limits: 65 and 64 % (70 and 59 %), 15 and 110 own flags in 10,000 (20 and 92). (These with the local
+#'   speed taken over both sides, `local_speed = "both_sides"`, as before fishycode plan 068.)
+#' @param anchor The forward scan's anchor at a jump: `"kept"` (default), today's scan, the next ping blamed;
+#'   `"vote"`, the pings after the jump decide which end is wrong (see Details). For `"clean"` (its second stage),
+#'   `"forward"` and `"local"` (its second stage). A ping with no position or time is then not judged and is no
+#'   anchor (`"forward"`'s default scan adopts it as one).
+#' @param local_speed For `"local"`, how a ping's local speed is taken from the recorded speeds around it:
+#'   `"larger_side"` (default), the larger of the median of the `k` before and the median of the `k` after, the ping's
+#'   own counted on each side, so a vessel leaving a berth or slowing to one is judged at the speed of the pings that
+#'   move, not outvoted by those at rest, and a single glitch is still one value of `k + 1` on its side;
+#'   `"both_sides"`, the median of the `k` on each side, its own left out, as before (fishycode plan 068). Chosen in
+#'   fishycode's study `$FISHYDATA/archive/2026-11-05-local-allowance/` (with the vote, the own limits and the recorded
+#'   speed): on `dansk_truth` the wrong positions caught within a point (65.5 against 65.9 % at 1 min, 66.7 against
+#'   67.7 % at 6 min) and fewer good pings flagged on their own (9.8 against 12.2 in 10,000 at 1 min, 50 against 104 at
+#'   6 min); on a case study 75 of the 411 good pings `"both_sides"` flags beyond a fixed 26 kn, by hand; on
+#'   Iceland's 40 hand-judged cases 33 right of 36 against 30; on five more datasets, of 26 judged episodes where the
+#'   two part, `"larger_side"` borne out in 20 and `"both_sides"` in 1.
+#' @param evidence `TRUE` adds the evidence columns, see Details. Default `FALSE`.
+#' @param vid,time,lon,lat The columns, if named otherwise.
+#' @param batch_pings For a lazy table: pings per batch.
+#'
+#' @return `x` with `ping_flag` and `ping_flag_basis` added or updated: the same type, the same rows; with `evidence =
+#'   TRUE`, the evidence columns too. The stage in `ping_flag`: `"vmask"`, `"spike"` and `"forward"` (`"clean"`),
+#'   `"forward"`, or `"local_spike"` and `"local_forward"`; with `anchor = "vote"`, also `"anchor"` or
+#'   `"local_anchor"`, an anchor the pings after a jump found wrong. The basis of a flag this call makes is
+#'   `"recorded"` where the vessel's recorded
+#'   speed set the limit (`"local"`), `"ceiling"` where the vessel's own ceiling did (`limits`), and `"track"` where the
+#'   fixed limit did.
+#'
+#' @references For `"sda"`: Freitas, C., Lydersen, C., Fedak, M.A. and Kovacs,
+#'   K.M. (2008). "A simple new algorithm to filter marine mammal Argos
+#'   locations". Marine Mammal Science, 24(2), 315–325.
+#'   \doi{10.1111/j.1748-7692.2007.00180.x}; the algorithm of
+#'   [argosfilter::sdafilter()], re-implemented in C++.
+#' @family flag pings
+#' @export
+#'
+os_flag_ping_impossible <- function(
+  x,
+  method = c("clean", "forward", "local", "sda", "fwdbwd", "sequential"),
+  ...,
+  kn_max = 25,
+  min_dt_s = 10,
+  max_gap_h = 4,
+  feed = NULL,
+  noise_nm = 0.3,
+  speed = NULL,
+  stream = NULL,
+  limits = NULL,
+  anchor = c("kept", "vote"),
+  local_speed = c("larger_side", "both_sides"),
+  evidence = FALSE,
+  vid = vid,
+  time = time,
+  lon = lon,
+  lat = lat,
+  batch_pings = 5e6
+) {
+  feed_quo <- rlang::enquo(feed)
+  has_feed <- !rlang::quo_is_null(feed_quo)
+  speed_quo <- rlang::enquo(speed)
+  has_speed <- !rlang::quo_is_null(speed_quo)
+  stream_quo <- rlang::enquo(stream)
+  has_stream <- !rlang::quo_is_null(stream_quo)
+  # one column for both (each feed a stream of its own): the stream is read from the feed's column, under no second
+  # name, so neither renames the other away nor clashes with a column already called `stream`
+  stream_is_feed <- has_stream && has_feed && identical(rlang::as_name(stream_quo), rlang::as_name(feed_quo))
+  stream_col <- if (stream_is_feed) "feed" else "stream"
+  .os_check_input(
+    x,
+    "os_flag_ping_impossible",
+    cols = c(
+      vid = rlang::as_name(rlang::enquo(vid)),
+      time = rlang::as_name(rlang::enquo(time)),
+      lon = rlang::as_name(rlang::enquo(lon)),
+      lat = rlang::as_name(rlang::enquo(lat))
+    ),
+    also = c(
+      if (has_feed) c(feed = rlang::as_name(feed_quo)),
+      if (has_speed) c(speed = rlang::as_name(speed_quo)),
+      if (has_stream) c(stream = rlang::as_name(stream_quo))
+    ),
+    types = c(
+      time = "time",
+      lon = "numeric",
+      lat = "numeric",
+      if (has_speed) c(speed = "numeric")
+    )
+  )
+  # with `stream =` no leg joins two streams, so their clocks need not agree
+  if (!has_stream) {
+    .os_warn_unharmonised(x, "os_flag_ping_impossible")
+  }
+  local_speed_given <- !missing(local_speed)
+  method <- match.arg(method)
+  anchor <- match.arg(anchor)
+  local_speed <- match.arg(local_speed)
+  if (method %in% c("sda", "fwdbwd", "sequential")) {
+    .os_withdrawn_method(method)
+  }
+  if (has_feed && !method %in% c("clean", "sda", "forward", "local")) {
+    stop(
+      "`feed` (the noise floor between feeds) is used by the methods \"clean\", \"forward\" and \"local\", not \"",
+      method,
+      "\".",
+      call. = FALSE
+    )
+  }
+  if (has_speed && method != "local") {
+    stop(
+      "`speed` (the recorded speed over ground) is used by the method \"local\", not \"",
+      method,
+      "\".",
+      call. = FALSE
+    )
+  }
+  if (local_speed_given && method != "local") {
+    stop(
+      "`local_speed` (how a ping's local speed is taken from the recorded speeds) is used by the method \"local\", ",
+      "not \"",
+      method,
+      "\".",
+      call. = FALSE
+    )
+  }
+  if (anchor == "vote" && !method %in% c("clean", "forward", "local")) {
+    stop(
+      "`anchor = \"vote\"` (the pings after a jump decide which end is wrong) is used by the methods \"clean\", ",
+      "\"forward\" and \"local\", not \"",
+      method,
+      "\".",
+      call. = FALSE
+    )
+  }
+  vote_args <- intersect(c("vote_n", "detour_m"), names(list(...)))
+  if (length(vote_args) && anchor != "vote") {
+    stop(
+      paste0("`", vote_args, "`", collapse = " and "),
+      " (the constants of the vote) ",
+      if (length(vote_args) > 1) "are" else "is",
+      " used with `anchor = \"vote\"`.",
+      call. = FALSE
+    )
+  }
+  if (anchor == "vote") {
+    vd <- list(...)
+    if (
+      "vote_n" %in% names(vd) &&
+        (!is.numeric(vd$vote_n) || length(vd$vote_n) != 1 || is.na(vd$vote_n) || vd$vote_n < 1 ||
+          vd$vote_n != round(vd$vote_n))
+    ) {
+      stop("`vote_n` must be one whole number, 1 or more.", call. = FALSE)
+    }
+    if (
+      "detour_m" %in% names(vd) &&
+        (!is.numeric(vd$detour_m) || length(vd$detour_m) != 1 || is.na(vd$detour_m) || vd$detour_m < 0)
+    ) {
+      stop("`detour_m` must be one number, 0 or more.", call. = FALSE)
+    }
+  }
+  if (!is.null(limits) && method != "local") {
+    stop(
+      "`limits` (each vessel's own, from os_create_ping_limits()) is used by the method \"local\", not \"",
+      method,
+      "\".",
+      call. = FALSE
+    )
+  }
+  if (has_feed) {
+    if (
+      !is.numeric(noise_nm) ||
+        length(noise_nm) != 1 ||
+        is.na(noise_nm) ||
+        noise_nm < 0
+    ) {
+      stop("`noise_nm` must be one number, 0 or more.", call. = FALSE)
+    }
+  }
+  noise_m <- if (has_feed) noise_nm * 1852 else 0
+  map <- .os_cols(
+    vid = {{ vid }},
+    time = {{ time }},
+    lon = {{ lon }},
+    lat = {{ lat }}
+  )
+  if (has_feed) {
+    map <- c(map, feed = rlang::as_name(feed_quo))
+  }
+  if (has_speed) {
+    map <- c(map, speed = rlang::as_name(speed_quo))
+  }
+  if (has_stream && !stream_is_feed) {
+    map <- c(map, stream = rlang::as_name(stream_quo))
+  }
+  lim <- if (!is.null(limits)) .os_limits_in(limits, map, colnames(x))
+  x <- .os_flag_init(.os_std_in(x, map))
+  dots <- list(...)
+  local <- method == "local"
+  ev_cols <- if (evidence) .os_evidence_cols(has_feed, local) else character(0)
+  fun <- function(d) {
+    if (evidence) {
+      d <- .os_evidence_init(d, has_feed, local)
+    }
+    i <- which(is.na(d$ping_flag))
+    if (!length(i)) {
+      return(d)
+    }
+    # the columns the engines read, and no others: a batch of the lazy route carries every column of the table
+    s <- dplyr::ungroup(d[
+      i,
+      c(
+        "vid",
+        "time",
+        "lon",
+        "lat",
+        if (has_feed) "feed",
+        if (has_speed) "speed"
+      ),
+      drop = FALSE
+    ])
+    s$.rb_i <- i
+    # each ping's own limits, NA where its vessel (and stream) has none
+    pl <- if (local) .os_limits_rows(d, lim)
+    if (local) {
+      s$.rb_kn <- pl$kn[i]
+      s$.rb_m0 <- pl$m0[i]
+      s$.rb_te <- pl$te[i]
+    }
+    if (has_feed) {
+      s$.rb_feed <- s$feed
+    }
+    if (has_speed) {
+      s$.rb_speed <- s$speed
+    }
+    # each stream judged apart: the engines take the vessel and the stream as their vessel (the limits above are the
+    # ping's own, by its vessel, or vessel and stream)
+    if (has_stream) {
+      s$vid <- .os_vessel_stream(d$vid[i], d[[stream_col]][i])
+    }
+    basis <- NULL
+    judged <- NULL
+    stage <- switch(
+      method,
+      clean = {
+        o <- do.call(
+          .whack_clean_df,
+          c(
+            list(
+              s,
+              kn_max = kn_max,
+              max_gap_h = max_gap_h,
+              min_dt_s = min_dt_s,
+              noise_m = noise_m,
+              anchor = anchor
+            ),
+            dots
+          )
+        )
+        stats::setNames(o$whack_stage, o$.rb_i)
+      },
+      sda = {
+        o <- do.call(
+          .os_whack_sda,
+          c(
+            list(s, kn_max = kn_max, min_dt_s = min_dt_s, noise_m = noise_m),
+            dots
+          )
+        )
+        stats::setNames(o$whack_sda, o$.rb_i)
+      },
+      forward = {
+        o <- do.call(
+          .os_whack_forward,
+          c(
+            list(
+              s,
+              kn_max = kn_max,
+              max_gap_h = max_gap_h,
+              min_dt_s = min_dt_s,
+              noise_m = noise_m,
+              anchor = anchor
+            ),
+            dots[intersect(c("vote_n", "detour_m"), names(dots))]
+          )
+        )
+        stats::setNames(
+          ifelse(o$whack2_anchor, "anchor", ifelse(o$whack2, "forward", NA_character_)),
+          o$.rb_i
+        )
+      },
+      local = {
+        o <- do.call(
+          .os_whack_local,
+          c(
+            list(
+              s,
+              kn_max = kn_max,
+              min_dt_s = min_dt_s,
+              max_gap_h = max_gap_h,
+              noise_m = noise_m,
+              anchor = anchor,
+              local_speed = local_speed
+            ),
+            dots
+          )
+        )
+        basis <- stats::setNames(o$whack_basis, o$.rb_i)
+        judged <- stats::setNames(o$whack_v, o$.rb_i)
+        stats::setNames(o$whack_local, o$.rb_i)
+      },
+      fwdbwd = {
+        o <- .os_whack_fwdbwd(s, kn_max = kn_max, min_dt_s = min_dt_s)
+        stats::setNames(ifelse(o$whack, "fwdbwd", NA_character_), o$.rb_i)
+      },
+      sequential = {
+        o <- s |>
+          dplyr::arrange(vid, time, lon, lat) |>
+          dplyr::group_by(vid) |>
+          dplyr::mutate(
+            .w = .os_whack_sequential_fast(
+              lon,
+              lat,
+              time,
+              kn_max = kn_max,
+              min_dt_s = min_dt_s
+            )
+          ) |>
+          dplyr::ungroup()
+        stats::setNames(ifelse(o$.w, "sequential", NA_character_), o$.rb_i)
+      }
+    )
+    rows <- as.integer(names(stage))
+    d$ping_flag[rows] <- unname(stage)
+    # the evidence that judged each flag: the fixed limit over the track, or the vessel's recorded speed
+    if (is.null(basis)) {
+      basis <- ifelse(is.na(stage), NA_character_, "track")
+    }
+    d$ping_flag_basis[rows] <- ifelse(
+      is.na(stage),
+      d$ping_flag_basis[rows],
+      unname(basis)
+    )
+    if (evidence) {
+      new <- logical(nrow(d))
+      new[rows[!is.na(stage)]] <- TRUE
+      if (local) {
+        d$ping_flag_speed_kn[rows] <- ifelse(
+          is.na(stage),
+          NA_real_,
+          unname(judged)
+        )
+      }
+      d <- .os_flag_evidence(
+        d,
+        new,
+        kn_max = kn_max,
+        min_dt_s = min_dt_s,
+        max_gap_h = max_gap_h,
+        noise_m = noise_m,
+        has_feed = has_feed,
+        local = if (local) .os_local_limits(dots),
+        rows = pl,
+        by = if (has_stream) .os_vessel_stream(d$vid, d[[stream_col]])
+      )
+    }
+    d
+  }
+  x <- if (inherits(x, "tbl_lazy")) {
+    .os_label_lazy(
+      x,
+      fun,
+      cols = unique(c(
+        "time",
+        "lon",
+        "lat",
+        if (has_feed) "feed",
+        if (has_speed) "speed",
+        if (has_stream) stream_col,
+        setdiff(lim$keys, "vid")
+      )),
+      order_by = c("time", "lon", "lat", if (has_feed) "feed"),
+      batch_pings = batch_pings,
+      what = "os_flag_ping_impossible()",
+      extra = ev_cols
+    )
+  } else {
+    fun(x)
+  }
+  .os_std_out(x, map)
+}
+
+# `limits =` of os_flag_ping_impossible(): the table of os_create_ping_limits(), its keys (the vessel, and a stream
+# where it has one) under the grammar's names, and each row's limits as the engine takes them: the ceiling kn (m/s), the
+# margin m0 (twice the noise, m) and the time error te (the larger of the grain and the measured error, s), NA where
+# the table has none (the engine's fixed values then). A key must be a column of the pings; a key twice is an error.
+.os_limits_in <- function(limits, map, x_cols, call = rlang::caller_env()) {
+  if (inherits(limits, "tbl_lazy")) {
+    limits <- dplyr::collect(limits)
+  }
+  if (!is.data.frame(limits)) {
+    rlang::abort("`limits` must be the table of os_create_ping_limits().", call = call)
+  }
+  limits <- as.data.frame(limits)
+  values <- .os_registry()$adds[[match("os_create_ping_limits", .os_registry()$fn)]]
+  need <- c(map[["vid"]], "ceiling_kn", "grain_s", "time_error_s", "noise_m")
+  miss <- setdiff(need, names(limits))
+  if (length(miss)) {
+    rlang::abort(
+      c(
+        sprintf("`limits` lacks %s.", paste0("`", miss, "`", collapse = ", ")),
+        i = "Give the table of os_create_ping_limits(), made from these pings with the same `vid`."
+      ),
+      call = call
+    )
+  }
+  keys <- c(map[["vid"]], setdiff(names(limits), c(values, map[["vid"]])))
+  absent <- setdiff(keys, x_cols)
+  if (length(absent)) {
+    rlang::abort(
+      c(
+        sprintf("`limits` is by %s, which the pings lack.", paste0("`", absent, "`", collapse = ", ")),
+        i = "Its columns other than the limits are its keys: the vessel, and the stream where one was given."
+      ),
+      call = call
+    )
+  }
+  key <- .os_key(limits[keys])
+  if (anyDuplicated(key)) {
+    rlang::abort(
+      sprintf("`limits` has %d rows twice by %s.", sum(duplicated(key)), paste0("`", keys, "`", collapse = ", ")),
+      call = call
+    )
+  }
+  # the keys under the grammar's names, as the pings carry them inside the function
+  inner <- ifelse(keys %in% map, names(map)[match(keys, map)], keys)
+  te <- pmax(limits$grain_s, limits$time_error_s, na.rm = TRUE)
+  list(
+    keys = inner,
+    key = key,
+    kn = limits$ceiling_kn * 0.514444,
+    m0 = 2 * limits$noise_m,
+    te = ifelse(is.na(te), 0, te),
+    grain = limits$grain_s,
+    noise = limits$noise_m
+  )
+}
+
+# Each row's limits from .os_limits_in(), NA where none (or no `limits`).
+.os_limits_rows <- function(d, lim) {
+  n <- nrow(d)
+  if (is.null(lim)) {
+    na <- rep(NA_real_, n)
+    return(list(kn = na, m0 = na, te = na, grain = na, noise = na))
+  }
+  m <- match(.os_key(d[lim$keys]), lim$key)
+  list(kn = lim$kn[m], m0 = lim$m0[m], te = lim$te[m], grain = lim$grain[m], noise = lim$noise[m])
+}
+
+.os_key <- function(df) {
+  do.call(paste, c(lapply(df, function(z) as.character(z)), sep = "\r"))
+}
+
+# A vessel and stream as one key, for the engines' vessel when each stream is judged apart (`stream =`)
+.os_vessel_stream <- function(vid, stream) {
+  paste(as.character(vid), as.character(stream), sep = "\r")
+}
+
+# The constants of the "local" rule, as .os_whack_local() takes them, with those the caller passed in `...`.
+.os_local_limits <- function(dots) {
+  f <- formals(.os_whack_local)
+  out <- list(factor = f$factor, margin_kn = f$margin_kn, margin_m = f$margin_m)
+  out[intersect(names(out), names(dots))] <- dots[intersect(
+    names(out),
+    names(dots)
+  )]
+  out
+}
+
+# Evidence of a flag (os_flag_ping_impossible(evidence = TRUE)) -------------------------
+# For each ping flagged in this call, the legs to the nearest ping on each side that is not flagged (by this
+# call or an earlier one: the track that is left), in the order the filters use, (vid, time, lon, lat).
+# The legs are the audit trail of a flag, and are measured on the track that is left, so a run of flagged
+# pings is judged against the pings that stay, not against each other. `ping_flag_side` names the side(s)
+# whose leg is impossible on the rule of the call: faster than kn_max on a step of at least min_dt_s, not
+# longer than max_gap_h (where the forward scan restarts), and not inside the noise floor between feeds.
+.os_evidence_cols <- function(has_feed, local = FALSE) {
+  c(
+    "ping_flag_side",
+    if (local) "ping_flag_speed_kn",
+    if (has_feed) "ping_flag_prev_feed",
+    "ping_flag_prev_dt_s",
+    "ping_flag_prev_dist_m",
+    if (has_feed) "ping_flag_next_feed",
+    "ping_flag_next_dt_s",
+    "ping_flag_next_dist_m"
+  )
+}
+
+.os_evidence_init <- function(d, has_feed, local = FALSE) {
+  for (nm in .os_evidence_cols(has_feed, local)) {
+    if (!nm %in% names(d)) {
+      d[[nm]] <- if (grepl("_(side|feed)$", nm)) {
+        rep(NA_character_, nrow(d))
+      } else {
+        rep(NA_real_, nrow(d))
+      }
+    }
+  }
+  d
+}
+
+.os_flag_evidence <- function(
+  d,
+  new,
+  kn_max,
+  min_dt_s,
+  max_gap_h,
+  noise_m,
+  has_feed,
+  local = NULL,
+  rows = NULL,
+  by = NULL
+) {
+  d <- .os_evidence_init(d, has_feed, !is.null(local))
+  if (!any(new)) {
+    return(d)
+  }
+  # the legs within a vessel, or with `stream =` within a vessel's stream
+  g <- if (is.null(by)) d$vid else by
+  o <- order(g, as.numeric(d$time), d$lon, d$lat)
+  n <- length(o)
+  idx <- seq_len(n)
+  v <- g[o]
+  t <- as.numeric(d$time[o])
+  lo <- d$lon[o]
+  la <- d$lat[o]
+  fd <- if (has_feed) as.character(d$feed[o]) else NULL
+  kept <- is.na(d$ping_flag[o])
+  # the nearest kept ping before and after each row (0 / n + 1: none), then none if it is another vessel's
+  pk <- c(0L, cummax(ifelse(kept, idx, 0L)))[idx]
+  nk <- c(rev(cummin(rev(ifelse(kept, idx, n + 1L)))), n + 1L)[idx + 1L]
+  pk[pk == 0L | v[pmax(pk, 1L)] != v] <- NA_integer_
+  nk[nk > n | v[pmin(nk, n)] != v] <- NA_integer_
+  r <- which(new[o])
+  ms_max <- kn_max * 0.514444
+  # "local": each row's own limits (os_create_ping_limits()), the fixed ones where it has none
+  if (!is.null(local)) {
+    kn_s <- if (is.null(rows)) rep(NA_real_, n) else rows$kn[o]
+    m0_s <- if (is.null(rows)) rep(NA_real_, n) else rows$m0[o]
+    te_s <- if (is.null(rows)) rep(NA_real_, n) else rows$te[o]
+    kn_s[is.na(kn_s)] <- ms_max
+    m0_s[is.na(m0_s)] <- local$margin_m
+    te_s[is.na(te_s)] <- 0
+  }
+  leg <- function(j) {
+    # the leg from each flagged row r to its neighbour j (a row of the sorted track, NA: none)
+    ok <- !is.na(j)
+    dt <- dist <- rep(NA_real_, length(r))
+    fj <- rep(NA_character_, length(r))
+    if (any(ok)) {
+      jj <- j[ok]
+      rr <- r[ok]
+      dist[ok] <- os_calc_distance(lo[rr], la[rr], lo[jj], la[jj])
+      dt[ok] <- abs(t[rr] - t[jj])
+      if (has_feed) {
+        fj[ok] <- fd[jj]
+      }
+    }
+    in_noise <- if (has_feed) {
+      !is.na(fj) & !is.na(fd[r]) & fj != fd[r] & dist <= noise_m
+    } else {
+      rep(FALSE, length(r))
+    }
+    too_far <- if (is.null(local)) {
+      dist / pmax(dt, min_dt_s) > ms_max
+    } else {
+      # "local": the limit at the speed the ping was judged by, the vessel's ceiling or the fixed one where none; the
+      # larger of the leg's two ends' limits, as the engine takes them
+      v <- d$ping_flag_speed_kn[o[r]] * 0.514444
+      e <- function(z) ifelse(is.na(j), z[r], pmax(z[r], z[pmax(j, 1L)]))
+      lim <- ifelse(
+        is.na(v),
+        e(kn_s),
+        local$factor * v + local$margin_kn * 0.514444
+      )
+      dist > e(m0_s) + lim * (pmax(dt, min_dt_s) + e(te_s))
+    }
+    bad <- ok &
+      !is.na(dist) &
+      dt <= max_gap_h * 3600 &
+      too_far &
+      !in_noise
+    list(dt = dt, dist = dist, feed = fj, bad = bad)
+  }
+  p <- leg(pk[r])
+  q <- leg(nk[r])
+  side <- ifelse(
+    p$bad & q$bad,
+    "both",
+    ifelse(p$bad, "prev", ifelse(q$bad, "next", "none"))
+  )
+  rows <- o[r]
+  d$ping_flag_side[rows] <- side
+  d$ping_flag_prev_dt_s[rows] <- p$dt
+  d$ping_flag_prev_dist_m[rows] <- p$dist
+  d$ping_flag_next_dt_s[rows] <- q$dt
+  d$ping_flag_next_dist_m[rows] <- q$dist
+  if (has_feed) {
+    d$ping_flag_prev_feed[rows] <- p$feed
+    d$ping_flag_next_feed[rows] <- q$feed
+  }
+  d
+}
+
