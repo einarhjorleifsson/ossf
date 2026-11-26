@@ -69,7 +69,7 @@ should actually really be just one function"; "yes, merge them").
   the Haul-witnessed approach as a function in ossf now"): `os_add_setting()`,
   from fishycode's study
   `$FISHYDATA/archive/2026-11-25-setting-iceland-longline/` (its README holds
-  what was tried and what was not taken). Held against it again by the study's `scripts/12_ossf_function.R`.
+  what was tried and what was not taken). Held against it again by the study's `scripts/12_ossf_function.R`. The step `effort` calls it since 2026-11-26, for each haul's soak.
 
 ## Checking
 
