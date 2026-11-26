@@ -19,12 +19,20 @@ tried on. Not installed: it is loaded from source
 (`pkgload::load_all("~/R/Pakkar/ossf")`). Commit, push or install only at the
 maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 
+**`os_add_gear()` (`R/gear.R`) is on `main` since 2026-11-26**, at the
+maintainer's word ("it is based on a published method, just the code is
+adopted"). It was held back for a day on a branch `local`, which is retired:
+left as it was, never pushed. The checkout is `main`. A pre-push hook in this
+clone (`.git/hooks/pre-push`, not versioned, 2026-11-26) refuses every push
+but `main` to `main` and any deletion; it still refuses a commit that holds
+`R/gear.R`, a clause to take out when the maintainer says to push.
+
 ## Three kinds of function
 
 - **ossf's own** (`R/fishing.R`, `haul.R`, `setting.R`, `polygon.R`,
-  `trip_value.R`, `time.R`, `score.R`, `map.R`, `effort.R`): written for ossf,
-  base R where it can (sf for polygons, ogis for the map, which is only
-  suggested). Edited here.
+  `trip_value.R`, `time.R`, `score.R`, `map.R`, `effort.R`, `gear.R`): written
+  for ossf, base R where it can (sf for polygons, ogis for the map, and ranger,
+  xgboost and nnet for the gear's models, all only suggested). Edited here.
 - **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb
   function the flow's steps call, with everything it calls, the C++ included,
   text unchanged but for the names (`rb_` to `os_`) and a comment that names a
@@ -79,6 +87,18 @@ should actually really be just one function"; "yes, merge them").
   (its README holds what was tried and what was not taken). Held against it
   again by the study's `scripts/12_ossf_function.R`. The step `effort` calls it
   since 2026-11-26, for each haul's soak.
+- The gear function, at the user's word (2026-11-25): `os_add_gear()`, Lattanzi
+  et al.'s (2026) fine-tuned random forest recoded from the paper's public code
+  (figshare 29647448, CC BY 4.0, in fishycode's
+  `$FISHYDATA/raw/external/cnr/figshare_29647448/`). Held out by a group the
+  caller must name. XGBoost and the logistic regression added the same day as
+  `method` (the user: "Yes, add both"; xgboost 3.2.1.1 installed from CRAN for
+  it), on the same folds; XGBoost's rounds found on a fifth of the training
+  groups, not on the test set as the Python did. Since 2026.11.26.2 the
+  forest names the gear as scikit-learn does: each tree's class shares weighed
+  by the class weights, then averaged over the trees. Before, the forest's
+  average was weighed, which named the rare gears far too often. No tests
+  written for it yet (the user, 2026-11-25: "don't run test for now").
 
 ## Checking
 

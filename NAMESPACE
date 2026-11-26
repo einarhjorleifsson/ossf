@@ -2,6 +2,7 @@
 
 export(os_add_effort)
 export(os_add_fishing)
+export(os_add_gear)
 export(os_add_hauls)
 export(os_add_ping_speed)
 export(os_add_setting)

@@ -11,8 +11,9 @@ The name: "o" is not, "ssf" is small-scale fisheries (the maintainer,
 
 - **ossf's own**, written for it and kept simple, in base R (sf for the
   polygons): `os_add_fishing()`, `os_add_hauls()`, `os_flag_ping_polygon()`,
-  `os_add_trip_value()`, `os_add_time_utc()`, `os_score()`, and the map,
-  `os_map()`.
+  `os_add_trip_value()`, `os_add_time_utc()`, `os_score()`, the map,
+  `os_map()`, and `os_add_gear()` (a random forest, XGBoost or a logistic
+  regression, by ranger, xgboost or nnet).
 - **Copies from ramb**, taken as they are with everything they call, the
   compiled code included (`data-raw/copy_from_ramb.R`; the maintainer: "Copy
   as they are"). Only the names differ: `rb_` is `os_`. They run in DuckDB as
@@ -55,6 +56,15 @@ A copy is never edited here: a change is made at its source and
   is the gear's scale, picked by vessel where its sets and hauls are most
   often of one length. `run_in = TRUE` takes the run in to a haul out, for
   gear hauled on a later visit.
+- **Gear (passive gears):** `os_add_gear()`: a haul's gear from its features
+  (its length, distance to the coast, speed, month, hour, soak, ...), by the
+  models of Lattanzi et al. (2026), recoded in R from the paper's public
+  Python code: `method = "forest"` (its choice for
+  nets against pots; ranger), `"xgboost"` (its choice for the specific gears;
+  xgboost) or `"logistic"` (its statistical baseline; nnet), each suggested.
+  Each haul whose gear is known is predicted by a model that never saw its
+  group (a trip, a vessel), the others by the model of them all; with the
+  features' grouped permutation importance.
 - **Effort:** `os_add_effort()`: each ping of a unit (a haul) stands for the
   stretch to the unit's next ping, its time and its ground; a unit's own
   quantities (a soak, a catch, hooks) shared over its pings by ground or by

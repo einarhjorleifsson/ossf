@@ -1,7 +1,7 @@
 Package: ossf
 Type: Package
 Title: From Vessel Tracks to Fishing
-Version: 2026.11.26.1
+Version: 2026.11.26.2
 Authors@R: person("Einar", "Hjörleifsson", role = c("aut", "cre"), email = "einar.hjorleifsson@gmail.com")
 Description: The steps from a vessel's pings to its fishing: the time put
     on UTC, the pings flagged (every ping in one outcome), port calls, trips,
@@ -33,10 +33,13 @@ Suggests:
     data.table,
     lwgeom,
     matrixStats,
+    nnet,
     ogis,
     ramb,
+    ranger,
     s2,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    xgboost
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
 Config/roxygen2/version: 8.1.0
