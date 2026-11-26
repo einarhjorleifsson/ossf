@@ -17,7 +17,7 @@ maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 ## Three kinds of function
 
 - **ossf's own** (`R/fishing.R`, `haul.R`, `setting.R`, `polygon.R`,
-  `trip_value.R`, `time.R`, `score.R`, `map.R`): written for ossf, base R where it can (sf for
+  `trip_value.R`, `time.R`, `score.R`, `map.R`, `effort.R`): written for ossf, base R where it can (sf for
   polygons, ogis for the map, which is only suggested). Edited here.
 - **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb function the flow's steps call, with everything it calls, the C++ included,
   text unchanged but for the names (`rb_` to `os_`). Made by

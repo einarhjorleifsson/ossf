@@ -54,6 +54,13 @@ A copy is never edited here: a change is made at its source and
   is the gear's scale, picked by vessel where its sets and hauls are most
   often of one length. `run_in = TRUE` takes the run in to a haul out, for
   gear hauled on a later visit.
+- **Effort:** `os_add_effort()`: each ping of a unit (a haul) stands for the
+  stretch to the unit's next ping, its time and its ground; a unit's own
+  quantities (a soak, a catch, hooks) shared over its pings by ground or by
+  time, the unit's total kept. `os_create_cells()`: the stretches laid along
+  the track onto squares of any size, H3 cells of any resolution, or both, in
+  pieces no longer than half the finest cell, every quantity in = out; any
+  coarser grid is a sum of these (ogis's `og_cells()` draws them).
 - **Against a witness:** `os_score()`, every row in one outcome, with recall,
   precision and F1.
 - **On a map, after any step:** `os_map()` draws the pings with what the flow
