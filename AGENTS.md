@@ -22,10 +22,11 @@ maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 **`os_add_gear()` (`R/gear.R`) is on `main` since 2026-11-26**, at the
 maintainer's word ("it is based on a published method, just the code is
 adopted"). It was held back for a day on a branch `local`, which is retired:
-left as it was, never pushed. The checkout is `main`. A pre-push hook in this
-clone (`.git/hooks/pre-push`, not versioned, 2026-11-26) refuses every push
-but `main` to `main` and any deletion; it still refuses a commit that holds
-`R/gear.R`, a clause to take out when the maintainer says to push.
+left as it was, never pushed. The checkout is `main`. Pushed to GitHub the
+same day at the maintainer's word (06920bf). A pre-push hook in this clone
+(`.git/hooks/pre-push`, not versioned, 2026-11-26) refuses every push but
+`main` to `main` and any deletion; its clause against a commit holding
+`R/gear.R` was taken out for that push.
 
 ## Three kinds of function
 
