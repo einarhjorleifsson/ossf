@@ -102,3 +102,74 @@ test_that("run_in = TRUE takes the run in to a haul out of the setting, and says
   expect_equal(attr(os_add_setting(q, reach_m = 100, run_in = TRUE), "under")$under, "nothing")
   expect_error(os_add_setting(p, run_in = NA), "run_in")
 })
+
+test_that("pick = \"open\": a haul closes the set it took, and only that; \"last\" lets two hauls take one set", {
+  # trip 1 sets string A east and string B back west, 60 m north of A; trip 2 hauls A, then B: each string lies within
+  # reach of both hauls. Between the two the vessel goes a quarter of an hour north and back, further than a string
+  # is long, so they are two events
+  up <- list(c(9, 15, 0, 1), c(9, 15, 0, -0.9856))                  # a round ending 60 m north of where it began
+  t1 <- track(c(list(c(9, 20, 0, 1), c(6, 30, 1, 0)), up, list(c(6, 30, -1, 0), c(9, 20, 0, -1))), start = "2024-01-01")
+  t2 <- track(c(list(c(9, 20, 0, 1), c(1.5, 120, 1, 0)), up, list(c(1.5, 120, -1, 0), c(9, 20, 0, -1))), start = "2024-01-02")
+  expect_equal((t1$lat[85] - t1$lat[35]) * 110540, 60, tolerance = 0.05)
+  p <- rbind(cbind(t1, trip = 1L), cbind(t2, trip = 2L))
+  p <- os_add_hauls(os_add_fishing(p, by = "trip"), by = "trip")
+  expect_equal(length(unique(stats::na.omit(p$haul_id))), 2)
+  open <- attr(os_add_setting(p, by = "trip", reach_m = 100), "under")
+  last <- attr(os_add_setting(p, by = "trip", reach_m = 100, pick = "last", pass = FALSE), "under")
+  expect_equal(open$under, c("a setting event", "a setting event"))
+  expect_equal(last$under, c("a setting event", "a setting event"))
+  expect_equal(length(unique(last$set_id)), 1)                      # the string last set, under both hauls
+  expect_equal(length(unique(open$set_id)), 2)                      # each haul a set of its own
+  expect_true(all(c("share_pass", "share_nothing") %in% names(open)))
+})
+
+# a string worked daily for 110 days, the speeds a little uneven (so the setting speed range is measured). Odd days:
+# out, a run in east along the string at 6 kn, the haul back west at 1.5 kn, the set east again at 6 kn, home by a round
+# north of it (north, west along a line 5.6 km north of the string, south). Even days: out, the haul east from the
+# near end with no run in, the set back west, home.
+daily <- function() {
+  set.seed(1)
+  odd <- list(c(9, 20, 0, 1), c(6, 30, 1, 0), c(1.5, 120, -1, 0), c(6, 30, 1, 0), c(9, 20, 0, 1), c(9, 20, -1, 0), c(9, 40, 0, -1))
+  even <- list(c(9, 20, 0, 1), c(1.5, 120, 1, 0), c(6, 30, -1, 0), c(9, 20, 0, -1))
+  day <- function(i) {
+    legs <- if (i %% 2) odd else even
+    legs <- unlist(lapply(legs, function(l) lapply(seq_len(l[2]), function(k) c(l[1] * (1 + stats::rnorm(1, 0, 0.03)), 1, l[3], l[4]))), recursive = FALSE)
+    cbind(track(legs, start = format(as.Date("2024-01-01") + i)), trip = i)
+  }
+  do.call(rbind, lapply(1:110, day))
+}
+
+test_that("a pass just before the haul gives way to the set of the day before, by the valley of the vessel's own soaks", {
+  p <- daily()
+  p <- os_add_hauls(os_add_fishing(p, by = "trip"), by = "trip")
+  o <- os_add_setting(p, by = "trip", reach_m = 100)
+  u <- attr(o, "under")
+  r <- attr(o, "ranges")
+  expect_equal(r$basis, "measured")
+  # the run in is hauled 0 to 150 minutes after it passed (a median 75); the set of the day before, about 22 hours
+  expect_true(!is.na(r$soak_valley_s) && r$soak_valley_s > 2 * 3600 && r$soak_valley_s < 20 * 3600)
+  # nearly every haul takes the day before's set (the uneven speeds break an event here and there)
+  expect_gte(sum(u$under == "a setting event" & u$soak_s > 18 * 3600), 100)
+  expect_lte(sum(u$soak_s < 2 * 3600), 3)
+  l <- attr(os_add_setting(p, by = "trip", reach_m = 100, pick = "last", pass = FALSE), "under")
+  expect_gte(sum(l$soak_s < 2 * 3600), 50)                          # the last thing laid on an odd day is its run in
+  expect_true(is.na(attr(os_add_setting(p, by = "trip", reach_m = 100, pick = "last"), "ranges")$soak_valley_s))
+})
+
+test_that("pass: a haul with no setting event under it takes the vessel's last pass along its line on an earlier trip", {
+  # day 111 hauls along the line the vessel steamed home on, at 9 kn, every odd day: outside its setting speed range
+  last_day <- cbind(track(list(c(9, 40, 0, 1), c(1.5, 120, 1, 0), c(9, 20, 0, 1), c(9, 20, -1, 0), c(9, 60, 0, -1)), start = "2024-04-21"), trip = 111L)
+  p <- rbind(daily(), last_day)
+  p <- os_add_hauls(os_add_fishing(p, by = "trip"), by = "trip")
+  o <- os_add_setting(p, by = "trip", reach_m = 100)
+  u <- attr(o, "under")
+  u <- u[nrow(u), ]
+  expect_equal(u$under, "an earlier pass")
+  expect_true(is.na(u$set_id))
+  expect_gt(u$soak_s, 24 * 3600)                                    # the passage of two days before (day 110 went home south)
+  expect_lt(u$soak_s, 72 * 3600)
+  n <- attr(os_add_setting(p, by = "trip", reach_m = 100, pass = FALSE), "under")
+  expect_equal(n$under[nrow(n)], "nothing")
+  expect_error(os_add_setting(p, by = "trip", pass = NA), "pass")
+  expect_error(os_add_setting(p, by = "trip", pick = "first"), "arg")
+})

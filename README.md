@@ -51,8 +51,12 @@ A copy is never edited here: a change is made at its source and
   set, the later haul as the witness. A position in no haul that lies on the
   line of a later haul is marked; the vessel's setting speed range is measured
   from the marked positions; the positions in it are grouped into setting
-  events; and each haul is asked what was last laid under it, a setting event
-  or an earlier haul (gear put back as it is hauled), with the soak. The reach
+  events; and each haul is asked what lies under it, with the soak: a setting
+  event, else an earlier haul (gear put back as it is hauled), else the
+  vessel's last pass along the line on an earlier trip. A haul closes the set
+  it took, and only that, and a pass just before the haul gives way to an
+  older set, by the valley of the vessel's own soaks (`pick = "last"` and
+  `pass = FALSE` give the last thing laid, as before 2026.11.26.3). The reach
   is the gear's scale, picked by vessel where its sets and hauls are most
   often of one length. `run_in = TRUE` takes the run in to a haul out, for
   gear hauled on a later visit.

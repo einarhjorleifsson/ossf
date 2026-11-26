@@ -10,7 +10,9 @@ os_add_setting(
   haul = "haul_id",
   reach_m = c(25, 50, 100, 250, 500, 1000),
   back_s = 240 * 3600,
-  run_in = FALSE
+  run_in = FALSE,
+  pick = c("open", "last"),
+  pass = TRUE
 )
 }
 \arguments{
@@ -38,6 +40,16 @@ itself. On the two datasets the function was made on, \code{TRUE} raised the agr
 to 90 \% on pots and nets, and lowered the sets found right from 79 to 31 \% on longlines hauled the same trip.
 The time between a setting event and its haul shows which a dataset is: nearly all under five minutes on the
 first, spread evenly from minutes to hours on the second.}
+
+\item{pick}{Which setting event a haul takes: \code{"open"} (the default), one no earlier haul took, a pass just before
+the haul giving way to an older set; or \code{"last"}, the one last laid under each position. See above.}
+
+\item{pass}{Whether a position with no setting event and no earlier haul under it takes the vessel's last pass
+there: \code{TRUE} (the default) or \code{FALSE}. The pass is a stretch of positions in no haul and no setting event, in an
+earlier group than the haul (an earlier trip: with no \code{by} there is none, and no pass is taken). It finds the gear laid at a speed outside the
+vessel's setting range, or in an event too little on the haul's line to be kept; it also takes a mere passage
+along the line for a laying, so a haul it serves is named apart (\code{"an earlier pass"}). On gear set and hauled
+in one trip it finds little, and that little is wrong.}
 }
 \value{
 \code{pings}, rows in the order given, with four columns added: \code{on_later_haul} (logical; \code{NA} in a haul),
@@ -46,13 +58,14 @@ positions; \code{"on a later haul's line"}, no range measured; or \code{"none: "
 setting events numbered by vessel in time order; \code{NA} where not setting). Three attributes:
 \describe{
 \item{\code{"ranges"}}{a row a vessel: \code{reach_m} and how it came (\code{reach_basis}), the share of hauls whose set fits
-the haul's length at it (\code{length_fit}), the setting speed range and its basis, the hauls and the setting
+the haul's length at it (\code{length_fit}), the setting speed range and its basis, the valley of its soaks in
+seconds (\code{soak_valley_s}; \code{NA} with \code{pick = "last"} or where it has none), the hauls and the setting
 events.}
 \item{\code{"sets"}}{a row a setting event: \code{vid}, the \code{by} column, \code{set_id}, \code{start}, \code{end}, \code{pings}, the share of
 them on a later haul (\code{on_later_haul}), and \code{distance_m}.}
 \item{\code{"under"}}{a row a haul: \code{vid}, the \code{haul} column, \code{pings}, the shares of its positions with a setting
-event, an earlier haul or nothing last laid under them, \code{under} (the kind that holds half or more:
-\code{"a setting event"}, \code{"an earlier haul"}, \code{"nothing"}, else \code{"mixed"}), the setting event under most of its
+event, an earlier haul, an earlier pass or nothing under them, \code{under} (the kind that holds half or more:
+\code{"a setting event"}, \code{"an earlier haul"}, \code{"an earlier pass"}, \code{"nothing"}, else \code{"mixed"}), the setting event under most of its
 positions (\code{set_id}, with \code{set_share}, the share of the haul's positions it lies under, \code{set_start} and
 \code{set_end}, that event's first and last time under the haul, and
 \code{set_same_group}: whether it lies in the haul's own group), \code{soak_s} (the median time since what was last
@@ -72,10 +85,19 @@ at which a position is more often marked than not). Where it measures none (too 
 vessel that sets at its steaming speed), the marked positions themselves are the call.
 \item Setting events: \code{\link[=os_add_hauls]{os_add_hauls()}} groups the positions in the range, in no haul, into events by the ground
 they cover. An event is kept where half or more of its positions are marked.
-\item Each haul is asked what lies under it, position by position: what the vessel last laid there before the
-haul began, within the reach and \code{back_s}: a setting event, or an earlier haul (gear put back as it is hauled
-is set by the haul before). The answer is the attribute \code{"under"}.
+\item Each haul is asked what lies under it, position by position, within the reach and \code{back_s} before the haul
+began. The best witness first: a setting event; else an earlier haul (gear put back as it is hauled is set by
+the haul before); else, with \code{pass}, the vessel's last pass there, whatever its speed; else nothing. The answer
+is the attribute \code{"under"}.
 }
+Which setting event a haul takes (\code{pick}). With \code{"open"}, a set is hauled once: the hauls are taken in time order,
+and each takes, among the setting events under it that no earlier haul took, the latest laid at least the vessel's
+soak valley before the haul began, or failing one so old, the latest. The parts of the events it took that lie
+under it are then closed to later hauls, and nothing else is: gear set beside it stays for its own haul. The soak
+valley is the vessel's own: the low point that best parts its soaks in two (as \code{\link[=os_add_fishing]{os_add_fishing()}} parts speeds),
+read from the hauls with a setting event last laid under them. Below it lies a pass along the gear just before
+hauling it, above it a set; a vessel with one kind of soak, or too few hauls, has no valley, and every event not
+yet taken counts. With \code{"last"}, each position takes the setting event last laid under it, taken before or not.
 The reach is the gear's scale: tens of metres for short strings set close together, a kilometre for long lines.
 Too narrow, a set is missed or found in part; too wide, the neighbouring gear is taken in. A line is as long
 hauled as set, so with several values in \code{reach_m} each vessel takes the one at which most of its hauls have a set
@@ -89,8 +111,9 @@ run in to a haul lie on its line as well, and come out as a setting event of the
 event's positions and ground, and \code{"under"} how much of a haul an event lies under, for the user to hold them by;
 \code{run_in = TRUE} takes them out where the gear allows it.
 
-Given, not taken from the data, and so named here: \code{back_s} (ten days); \code{run_in}; the half of an event's positions for it to
-be kept; the half of a haul's positions for its outcome; the 0.8 to 1.25 of the length fit; the candidate reaches.
+Given, not taken from the data, and so named here: \code{back_s} (ten days); \code{run_in}; \code{pick}; \code{pass}; the half of an
+event's positions for it to be kept; the half of a haul's positions for its outcome; the 0.8 to 1.25 of the length
+fit; the candidate reaches; the 100 soaks a valley is read from.
 }
 \examples{
 # a vessel sets a line east at 6 kn, steams a round north of it back to where the set began, hauls the line

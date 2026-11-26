@@ -1,7 +1,7 @@
 Package: ossf
 Type: Package
 Title: From Vessel Tracks to Fishing
-Version: 2026.11.26.2
+Version: 2026.11.26.3
 Authors@R: person("Einar", "Hjörleifsson", role = c("aut", "cre"), email = "einar.hjorleifsson@gmail.com")
 Description: The steps from a vessel's pings to its fishing: the time put
     on UTC, the pings flagged (every ping in one outcome), port calls, trips,

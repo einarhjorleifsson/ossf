@@ -297,9 +297,11 @@ os_add_gear <- function(hauls, gear, features, group, method = c("forest", "xgbo
     piece <- max(1L, floor(2e7 / (length(lv) * m$model$num.trees)))
     for (i in split(seq_len(nrow(xm)), ceiling(seq_len(nrow(xm)) / piece))) {
       a <- stats::predict(m$model, data = xm[i, , drop = FALSE], predict.all = TRUE)$predictions
-      a <- array(a, c(length(i), length(lv), m$model$num.trees))     # hauls x classes x trees
-      a <- sweep(a, 2, w, `*`)
-      p[i, ] <- rowMeans(sweep(a, c(1, 3), apply(a, c(1, 3), sum), `/`), dims = 2)
+      n_i <- length(i); n_t <- m$model$num.trees
+      a <- aperm(array(a, c(n_i, length(lv), n_t)), c(1, 3, 2))      # hauls x trees x classes
+      a <- a * rep(w, each = n_i * n_t)                              # each class by its weight
+      a <- a / as.vector(rowSums(a, dims = 2))                       # each tree's shares, summing to one
+      p[i, ] <- colMeans(aperm(a, c(2, 1, 3)))                       # the mean over the trees
     }
   } else {
     p <- if (m$method == "xgboost") stats::predict(m$model, as.matrix(xm)) else stats::predict(m$model, newdata = xm, type = "probs")

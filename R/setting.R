@@ -22,7 +22,21 @@
 # time from a setting event to its haul: two kinds on the case study, one broad spread in Iceland, where the short ones
 # are sets) and is open: a valley is found in both, so it needs a test of whether there are two kinds at all.
 #
-# Drafted with AI assistance (Claude), 2026-11-25; not yet checked by a person.
+# Which set a haul takes, worked out on 2026-11-26 on the same case study, the Icelandic longliners and Iceland's
+# Greenland halibut gillnets of 2022-2025 (nets soaking for days; the same study folder), counts only. Taking the last
+# thing laid under each position gave a quarter of the case study's hauls no real set: an eighth had nothing under
+# them, and an eighth a "soak" of minutes, a pass along the haul's line just before it. Three principles, each tested:
+#  1. a haul closes the set it took, and only that (closing everything within reach of a haul took the neighbouring
+#     nets' sets with it, where the reach is a kilometre);
+#  2. among the sets not yet taken, a pass younger than the valley of the vessel's own soaks gives way to an older one
+#     (the valley alone, with no closing, reached for sets already hauled and did harm on the longliners);
+#  3. the best witness first: a setting event, else an earlier haul, else the vessel's last earlier pass along the line.
+# With them the case study's hauls with nothing under them or a soak under an hour fell from 1,430 to 794 of 5,511,
+# and the set start within the hour of the logged one rose on the longliners from 79.4 to 80.1 % (each of three line
+# metiers) and on the gillnets from 51.3 to 55.4 %. Nothing was fitted to the Icelandic data. `pick = "last"` with
+# `pass = FALSE` is the function as it was.
+#
+# Drafted with AI assistance (Claude), 2026-11-25 and 2026-11-26; not yet checked by a person.
 
 #' Setting from a vessel's track, the later haul as its witness
 #'
@@ -38,10 +52,19 @@
 #'     vessel that sets at its steaming speed), the marked positions themselves are the call.
 #'   \item Setting events: [os_add_hauls()] groups the positions in the range, in no haul, into events by the ground
 #'     they cover. An event is kept where half or more of its positions are marked.
-#'   \item Each haul is asked what lies under it, position by position: what the vessel last laid there before the
-#'     haul began, within the reach and `back_s`: a setting event, or an earlier haul (gear put back as it is hauled
-#'     is set by the haul before). The answer is the attribute `"under"`.
+#'   \item Each haul is asked what lies under it, position by position, within the reach and `back_s` before the haul
+#'     began. The best witness first: a setting event; else an earlier haul (gear put back as it is hauled is set by
+#'     the haul before); else, with `pass`, the vessel's last pass there, whatever its speed; else nothing. The answer
+#'     is the attribute `"under"`.
 #' }
+#' Which setting event a haul takes (`pick`). With `"open"`, a set is hauled once: the hauls are taken in time order,
+#' and each takes, among the setting events under it that no earlier haul took, the latest laid at least the vessel's
+#' soak valley before the haul began, or failing one so old, the latest. The parts of the events it took that lie
+#' under it are then closed to later hauls, and nothing else is: gear set beside it stays for its own haul. The soak
+#' valley is the vessel's own: the low point that best parts its soaks in two (as [os_add_fishing()] parts speeds),
+#' read from the hauls with a setting event last laid under them. Below it lies a pass along the gear just before
+#' hauling it, above it a set; a vessel with one kind of soak, or too few hauls, has no valley, and every event not
+#' yet taken counts. With `"last"`, each position takes the setting event last laid under it, taken before or not.
 #' The reach is the gear's scale: tens of metres for short strings set close together, a kilometre for long lines.
 #' Too narrow, a set is missed or found in part; too wide, the neighbouring gear is taken in. A line is as long
 #' hauled as set, so with several values in `reach_m` each vessel takes the one at which most of its hauls have a set
@@ -54,8 +77,9 @@
 #' event's positions and ground, and `"under"` how much of a haul an event lies under, for the user to hold them by;
 #' `run_in = TRUE` takes them out where the gear allows it.
 #'
-#' Given, not taken from the data, and so named here: `back_s` (ten days); `run_in`; the half of an event's positions for it to
-#' be kept; the half of a haul's positions for its outcome; the 0.8 to 1.25 of the length fit; the candidate reaches.
+#' Given, not taken from the data, and so named here: `back_s` (ten days); `run_in`; `pick`; `pass`; the half of an
+#' event's positions for it to be kept; the half of a haul's positions for its outcome; the 0.8 to 1.25 of the length
+#' fit; the candidate reaches; the 100 soaks a valley is read from.
 #'
 #' @param pings A data frame of pings with `vid`, `time` (`POSIXct`), `lon` and `lat` (decimal degrees) and the
 #'   `haul` column. Rows may be in any order.
@@ -77,19 +101,29 @@
 #'   The time between a setting event and its haul shows which a dataset is: nearly all under five minutes on the
 #'   first, spread evenly from minutes to hours on the second.
 #'
+#' @param pick Which setting event a haul takes: `"open"` (the default), one no earlier haul took, a pass just before
+#'   the haul giving way to an older set; or `"last"`, the one last laid under each position. See above.
+#' @param pass Whether a position with no setting event and no earlier haul under it takes the vessel's last pass
+#'   there: `TRUE` (the default) or `FALSE`. The pass is a stretch of positions in no haul and no setting event, in an
+#'   earlier group than the haul (an earlier trip: with no `by` there is none, and no pass is taken). It finds the gear laid at a speed outside the
+#'   vessel's setting range, or in an event too little on the haul's line to be kept; it also takes a mere passage
+#'   along the line for a laying, so a haul it serves is named apart (`"an earlier pass"`). On gear set and hauled
+#'   in one trip it finds little, and that little is wrong.
+#'
 #' @return `pings`, rows in the order given, with four columns added: `on_later_haul` (logical; `NA` in a haul),
 #'   `setting` (logical), `setting_basis` (`"measured"`, the vessel's setting speed range measured from the marked
 #'   positions; `"on a later haul's line"`, no range measured; or `"none: "` and why) and `set_id` (an integer, the
 #'   setting events numbered by vessel in time order; `NA` where not setting). Three attributes:
 #'   \describe{
 #'     \item{`"ranges"`}{a row a vessel: `reach_m` and how it came (`reach_basis`), the share of hauls whose set fits
-#'       the haul's length at it (`length_fit`), the setting speed range and its basis, the hauls and the setting
+#'       the haul's length at it (`length_fit`), the setting speed range and its basis, the valley of its soaks in
+#'       seconds (`soak_valley_s`; `NA` with `pick = "last"` or where it has none), the hauls and the setting
 #'       events.}
 #'     \item{`"sets"`}{a row a setting event: `vid`, the `by` column, `set_id`, `start`, `end`, `pings`, the share of
 #'       them on a later haul (`on_later_haul`), and `distance_m`.}
 #'     \item{`"under"`}{a row a haul: `vid`, the `haul` column, `pings`, the shares of its positions with a setting
-#'       event, an earlier haul or nothing last laid under them, `under` (the kind that holds half or more:
-#'       `"a setting event"`, `"an earlier haul"`, `"nothing"`, else `"mixed"`), the setting event under most of its
+#'       event, an earlier haul, an earlier pass or nothing under them, `under` (the kind that holds half or more:
+#'       `"a setting event"`, `"an earlier haul"`, `"an earlier pass"`, `"nothing"`, else `"mixed"`), the setting event under most of its
 #'       positions (`set_id`, with `set_share`, the share of the haul's positions it lies under, `set_start` and
 #'       `set_end`, that event's first and last time under the haul, and
 #'       `set_same_group`: whether it lies in the haul's own group), `soak_s` (the median time since what was last
@@ -113,7 +147,9 @@
 #' out <- os_add_setting(os_add_hauls(os_add_fishing(pings)), reach_m = 100)
 #' table(out$setting)
 #' attr(out, "under")
-os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 50, 100, 250, 500, 1000), back_s = 240 * 3600, run_in = FALSE) {
+os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 50, 100, 250, 500, 1000), back_s = 240 * 3600, run_in = FALSE,
+                           pick = c("open", "last"), pass = TRUE) {
+  pick <- match.arg(pick)
   if (!(is.character(haul) && length(haul) == 1 && !is.na(haul))) stop("`haul` must be one column name.", call. = FALSE)
   need <- c("vid", "time", "lon", "lat", haul, by)
   miss <- setdiff(need, names(pings))
@@ -122,6 +158,7 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
   if (!(is.numeric(reach_m) && length(reach_m) && !anyNA(reach_m) && all(reach_m > 0))) stop("`reach_m` must be one or more numbers of metres, over 0.", call. = FALSE)
   if (!(is.numeric(back_s) && length(back_s) == 1 && !is.na(back_s) && back_s > 0)) stop("`back_s` must be one number of seconds, over 0.", call. = FALSE)
   if (!(is.logical(run_in) && length(run_in) == 1 && !is.na(run_in))) stop("`run_in` must be TRUE or FALSE.", call. = FALSE)
+  if (!(is.logical(pass) && length(pass) == 1 && !is.na(pass))) stop("`pass` must be TRUE or FALSE.", call. = FALSE)
   made <- intersect(c("on_later_haul", "setting", "setting_basis", "set_id"), names(pings))
   if (length(made)) stop("`pings` already has: ", paste(made, collapse = ", "), call. = FALSE)
   reach_m <- sort(unique(reach_m))
@@ -164,7 +201,7 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
     best <- NULL
     fits <- numeric(0)
     for (r in reach_m) {
-      one <- .os_setting_reach(d, r, back_s, grouped = !is.null(by), run_in = run_in)
+      one <- .os_setting_reach(d, r, back_s, grouped = !is.null(by), run_in = run_in, pick = pick, pass = pass)
       fits <- c(fits, one$fit)
       if (is.null(best) || (!is.na(one$fit) && (is.na(best$fit) || one$fit > best$fit))) best <- c(one, list(reach = r))
     }
@@ -175,7 +212,7 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
     ranges[[length(ranges) + 1]] <- data.frame(
       vid = v, reach_m = best$reach, reach_basis = if (length(reach_m) == 1) "given" else "picked: the sets and hauls most often of one length",
       length_fit = best$fit, speed_min_kn = best$range[1], speed_max_kn = best$range[2], basis = best$basis,
-      hauls = length(unique(hid[inh])), sets = nrow(best$sets))
+      soak_valley_s = best$valley, hauls = length(unique(hid[inh])), sets = nrow(best$sets))
     if (nrow(best$sets)) {
       s <- data.frame(vid = rep(v, nrow(best$sets)))
       if (!is.null(by)) s[[by]] <- best$sets$g
@@ -185,7 +222,7 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
     u <- best$under
     uu <- data.frame(vid = rep(v, nrow(u)))
     uu[[haul]] <- u$hid
-    under[[length(under) + 1]] <- cbind(uu, u[c("pings", "share_set", "share_haul", "share_nothing", "under", "set_id", "set_share")], set_start = as_time(u$set_start),
+    under[[length(under) + 1]] <- cbind(uu, u[c("pings", "share_set", "share_haul", "share_pass", "share_nothing", "under", "set_id", "set_share")], set_start = as_time(u$set_start),
                                         set_end = as_time(u$set_end), u[c("set_same_group", "soak_s", "haul_m", "set_m")])
   }
   bind <- function(x) if (length(x)) { o <- do.call(rbind, x); rownames(o) <- NULL; o } else NULL
@@ -201,7 +238,7 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
 
 # One vessel at one reach: the witness, the range, the events, and what lies under each haul --------------------------------
 # `d` holds the vessel's judged pings in time order (see os_add_setting()).
-.os_setting_reach <- function(d, r, back_s, grouped, run_in = FALSE) {
+.os_setting_reach <- function(d, r, back_s, grouped, run_in = FALSE, pick = "open", pass = TRUE) {
   n <- length(d$t)
   inh <- !is.na(d$hid)
   ih <- which(inh)
@@ -261,19 +298,13 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
                        pings = as.vector(tapply(is, set_id[is], length)), on_later_haul = as.vector(tapply(wit[is] %in% TRUE, set_id[is], mean)),
                        distance_m = as.vector(tapply(d$gr[is], set_id[is], function(z) max(z) - min(z))))
   }
-  # 4. each haul by what was last laid under it
+  # 4. each haul by what was laid under it
   hk <- d$hid[ih]
-  t_set <- t_haul <- rep(NA_real_, length(ih))
-  set_pairs <- NULL
-  if (length(is)) {
-    S <- .os_line_points(set_id[is], d$g[is], d$t[is], d$x[is], d$y[is], r / 2)
-    pr <- .os_near(d$t[ih], d$x[ih], d$y[ih], S$x, S$y, S$t, r, back_s, function(a, b, at, ...) S$t[b] < d$h0[ih][a] & at[a] - S$t[b] <= back_s)
-    if (length(pr$a)) {
-      o <- order(pr$a, -S$t[pr$b]); top <- !duplicated(pr$a[o])
-      t_set[pr$a[o][top]] <- S$t[pr$b[o][top]]
-      set_pairs <- data.frame(a = pr$a, key = S$key[pr$b], t = S$t[pr$b])
-    }
-  }
+  h0i <- d$h0[ih]
+  ids <- sort(unique(hk))
+  per <- function(x, fun) as.vector(tapply(x, factor(hk, ids), fun))
+  # an earlier haul under each position: gear put back as it is hauled is set by the haul before
+  t_haul <- rep(NA_real_, length(ih))
   pr <- .os_near(d$t[ih], d$x[ih], d$y[ih], H$x, H$y, H$t, r, back_s, function(a, b, at, ...) {
     earlier <- if (grouped) H$g0[b] < d$g0[ih][a] else H$h1[b] < d$h0[ih][a]
     earlier & H$key[b] != hk[a] & at[a] - H$t[b] <= back_s & H$t[b] < at[a] })
@@ -281,37 +312,112 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
     o <- order(pr$a, -H$t[pr$b]); top <- !duplicated(pr$a[o])
     t_haul[pr$a[o][top]] <- H$t[pr$b[o][top]]
   }
-  last <- ifelse(is.na(t_set) & is.na(t_haul), "nothing", ifelse(is.na(t_haul) | (!is.na(t_set) & t_set >= t_haul), "set", "haul"))
-  t_last <- pmax(t_set, t_haul, na.rm = TRUE)
-  ids <- sort(unique(hk))
-  per <- function(x, fun) as.vector(tapply(x, factor(hk, ids), fun))
-  under <- data.frame(hid = ids, pings = per(hk, length), share_set = per(last == "set", mean), share_haul = per(last == "haul", mean), share_nothing = per(last == "nothing", mean))
-  under$under <- ifelse(under$share_set >= 0.5, "a setting event", ifelse(under$share_haul >= 0.5, "an earlier haul", ifelse(under$share_nothing >= 0.5, "nothing", "mixed")))
-  under$soak_s <- per(d$t[ih] - t_last, function(z) if (all(is.na(z))) NA_real_ else stats::median(z, na.rm = TRUE))
-  under$haul_m <- per(d$gr[ih], function(z) max(z) - min(z))
-  under$set_id <- NA_integer_; under$set_start <- under$set_end <- under$set_m <- under$set_share <- NA_real_; under$set_same_group <- NA
-  if (!is.null(set_pairs)) {
-    # the setting event under most of the haul's positions, the later on a tie; its first and last time under the haul
-    # a haul's position is counted once an event, however many of the event's line points lie within reach of it
-    set_pairs <- set_pairs[order(set_pairs$a, set_pairs$key, set_pairs$t), ]
-    ak <- paste(set_pairs$a, set_pairs$key)
-    lo <- set_pairs[!duplicated(ak), ]
-    hi <- set_pairs[!duplicated(ak, fromLast = TRUE), ]
-    hk2 <- paste(hk[lo$a], lo$key)
-    cnt <- data.frame(hid = hk[lo$a], key = lo$key, n = 1L, s0 = lo$t, s1 = hi$t)
-    cnt <- data.frame(hid = cnt$hid[!duplicated(hk2)], key = cnt$key[!duplicated(hk2)], n = as.vector(tapply(cnt$n, factor(hk2, unique(hk2)), sum)),
-                      s0 = as.vector(tapply(cnt$s0, factor(hk2, unique(hk2)), min)), s1 = as.vector(tapply(cnt$s1, factor(hk2, unique(hk2)), max)))
-    cnt <- cnt[order(cnt$hid, -cnt$n, -cnt$s0), ]
-    cnt <- cnt[!duplicated(cnt$hid), ]
-    k <- match(under$hid, cnt$hid)
-    under$set_id <- cnt$key[k]; under$set_start <- cnt$s0[k]; under$set_end <- cnt$s1[k]
-    under$set_share <- ifelse(is.na(k), NA_real_, cnt$n[k] / under$pings)
-    at <- function(tt) d$gr[pmax(findInterval(tt, d$t), 1L)]
-    under$set_m <- ifelse(is.na(k), NA_real_, at(under$set_end) - at(under$set_start))
-    under$set_same_group <- sets$g[match(under$set_id, sets$set_id)] == d$g[ih][match(under$hid, hk)]
+  # the setting events' line points under each position, laid before its haul began
+  S <- sp <- NULL
+  if (length(is)) {
+    S <- .os_line_points(set_id[is], d$g[is], d$t[is], d$x[is], d$y[is], r / 2)
+    sp <- .os_near(d$t[ih], d$x[ih], d$y[ih], S$x, S$y, S$t, r, back_s, function(a, b, at, ...) S$t[b] < h0i[a] & at[a] - S$t[b] <= back_s)
+    if (!length(sp$a)) sp <- NULL
   }
+  # "last": under each position, the setting event last laid there
+  lay_last <- function() {
+    t_set <- rep(NA_real_, length(ih))
+    if (is.null(sp)) return(list(t_set = t_set, pairs = NULL))
+    o <- order(sp$a, -S$t[sp$b]); top <- !duplicated(sp$a[o])
+    t_set[sp$a[o][top]] <- S$t[sp$b[o][top]]
+    list(t_set = t_set, pairs = data.frame(a = sp$a, key = S$key[sp$b], t = S$t[sp$b]))
+  }
+  # "open": a haul closes the set it took, and only that. The hauls in time order: each takes, position by position,
+  # among the setting events under it that no earlier haul took, the latest laid at least `valley` before the haul
+  # began, else the latest; the points of the events it took that lie under it are then closed.
+  lay_open <- function(valley) {
+    t_set <- rep(NA_real_, length(ih))
+    if (is.null(sp)) return(list(t_set = t_set, pairs = NULL))
+    taken <- rep(FALSE, length(S$t))
+    by_haul <- split(seq_along(sp$a), hk[sp$a])
+    begins <- tapply(h0i, hk, min)
+    pa_all <- pk_all <- pt_all <- vector("list", length(begins)); j <- 0L
+    for (hh in names(sort(begins))) {
+      ix <- by_haul[[hh]]
+      if (is.null(ix)) next
+      ix <- ix[!taken[sp$b[ix]]]
+      if (!length(ix)) next
+      pa <- sp$a[ix]; pb <- sp$b[ix]
+      old <- h0i[pa] - S$t[pb] >= valley
+      ok <- old | !tapply(old, pa, any)[as.character(pa)]
+      qa <- pa[ok]; qb <- pb[ok]
+      o <- order(qa, -S$t[qb]); top <- !duplicated(qa[o])
+      t_set[qa[o][top]] <- S$t[qb[o][top]]
+      keys <- unique(S$key[qb[o][top]])
+      taken[pb[S$key[pb] %in% keys]] <- TRUE
+      kq <- S$key[qb] %in% keys
+      j <- j + 1L
+      pa_all[[j]] <- qa[kq]; pk_all[[j]] <- S$key[qb][kq]; pt_all[[j]] <- S$t[qb][kq]
+    }
+    list(t_set = t_set, pairs = if (j) data.frame(a = unlist(pa_all), key = unlist(pk_all), t = unlist(pt_all)) else NULL)
+  }
+  # the hauls' table from what lies under each position: a setting event, an earlier haul, an earlier pass, nothing
+  table_of <- function(t_set, t_haul, set_pairs, with_pass) {
+    last <- ifelse(is.na(t_set) & is.na(t_haul), "nothing", ifelse(is.na(t_haul) | (!is.na(t_set) & t_set >= t_haul), "set", "haul"))
+    t_last <- pmax(t_set, t_haul, na.rm = TRUE)
+    need <- which(last == "nothing")
+    ip <- which(!inh & !setting & !is_run_in & !is.na(d$g))
+    if (with_pass && grouped && length(need) && length(ip)) {
+      # the vessel's last pass there in an earlier group, whatever its speed (with no groups there is no earlier visit)
+      run <- cumsum(c(TRUE, diff(ip) != 1 | d$g[ip][-1] != d$g[ip][-length(ip)]))
+      P <- .os_line_points(run, d$g[ip], d$t[ip], d$x[ip], d$y[ip], r / 2)
+      P$g0 <- d$g0[ip][match(P$key, run)]
+      ng0 <- d$g0[ih][need]
+      pq <- .os_near(d$t[ih][need], d$x[ih][need], d$y[ih][need], P$x, P$y, P$t, r, back_s, function(a, b, at, ...)
+        P$g0[b] < ng0[a] & at[a] - P$t[b] <= back_s & P$t[b] < at[a])
+      if (length(pq$a)) {
+        o <- order(pq$a, -P$t[pq$b]); top <- !duplicated(pq$a[o])
+        t_last[need[pq$a[o][top]]] <- P$t[pq$b[o][top]]
+        last[need[pq$a[o][top]]] <- "pass"
+      }
+    }
+    under <- data.frame(hid = ids, pings = per(hk, length), share_set = per(last == "set", mean), share_haul = per(last == "haul", mean),
+                        share_pass = per(last == "pass", mean), share_nothing = per(last == "nothing", mean))
+    under$under <- ifelse(under$share_set >= 0.5, "a setting event", ifelse(under$share_haul >= 0.5, "an earlier haul",
+                   ifelse(under$share_pass >= 0.5, "an earlier pass", ifelse(under$share_nothing >= 0.5, "nothing", "mixed"))))
+    under$soak_s <- per(d$t[ih] - t_last, function(z) if (all(is.na(z))) NA_real_ else stats::median(z, na.rm = TRUE))
+    under$haul_m <- per(d$gr[ih], function(z) max(z) - min(z))
+    under$set_id <- NA_integer_; under$set_start <- under$set_end <- under$set_m <- under$set_share <- NA_real_; under$set_same_group <- NA
+    if (!is.null(set_pairs)) {
+      # the setting event under most of the haul's positions, the later on a tie; its first and last time under the haul
+      # a haul's position is counted once an event, however many of the event's line points lie within reach of it
+      set_pairs <- set_pairs[order(set_pairs$a, set_pairs$key, set_pairs$t), ]
+      ak <- paste(set_pairs$a, set_pairs$key)
+      lo <- set_pairs[!duplicated(ak), ]
+      hi <- set_pairs[!duplicated(ak, fromLast = TRUE), ]
+      hk2 <- paste(hk[lo$a], lo$key)
+      cnt <- data.frame(hid = hk[lo$a], key = lo$key, n = 1L, s0 = lo$t, s1 = hi$t)
+      cnt <- data.frame(hid = cnt$hid[!duplicated(hk2)], key = cnt$key[!duplicated(hk2)], n = as.vector(tapply(cnt$n, factor(hk2, unique(hk2)), sum)),
+                        s0 = as.vector(tapply(cnt$s0, factor(hk2, unique(hk2)), min)), s1 = as.vector(tapply(cnt$s1, factor(hk2, unique(hk2)), max)))
+      cnt <- cnt[order(cnt$hid, -cnt$n, -cnt$s0), ]
+      cnt <- cnt[!duplicated(cnt$hid), ]
+      k <- match(under$hid, cnt$hid)
+      under$set_id <- cnt$key[k]; under$set_start <- cnt$s0[k]; under$set_end <- cnt$s1[k]
+      under$set_share <- ifelse(is.na(k), NA_real_, cnt$n[k] / under$pings)
+      at <- function(tt) d$gr[pmax(findInterval(tt, d$t), 1L)]
+      under$set_m <- ifelse(is.na(k), NA_real_, at(under$set_end) - at(under$set_start))
+      under$set_same_group <- sets$g[match(under$set_id, sets$set_id)] == d$g[ih][match(under$hid, hk)]
+    }
+    under
+  }
+  L <- lay_last()
+  valley <- NA_real_
+  if (pick == "open") {
+    # the valley of the vessel's soaks, from the hauls with a setting event last laid under them: below it, a pass
+    # just before the haul; above it, a set. None found (too few hauls, one kind of soak): every candidate is a set.
+    u0 <- table_of(L$t_set, t_haul, L$pairs, with_pass = FALSE)
+    valley <- .os_range_estimated(u0$soak_s[u0$under == "a setting event" & !is.na(u0$soak_s) & u0$soak_s > 0])$max
+    L <- lay_open(if (is.na(valley)) 0 else valley)
+    t_haul[!is.na(L$t_set)] <- NA_real_   # a set not yet taken, under a position, comes before an earlier haul there
+  }
+  under <- table_of(L$t_set, t_haul, L$pairs, with_pass = pass)
   ratio <- under$set_m / under$haul_m
-  list(wit = wit, setting = setting, set_id = set_id, basis = basis, range = range, sets = sets, under = under, run_in = is_run_in,
+  list(wit = wit, setting = setting, set_id = set_id, basis = basis, range = range, sets = sets, under = under, run_in = is_run_in, valley = valley,
        fit = mean(!is.na(ratio) & is.finite(ratio) & ratio >= 0.8 & ratio < 1.25))
 }
 

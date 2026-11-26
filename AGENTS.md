@@ -87,7 +87,15 @@ should actually really be just one function"; "yes, merge them").
   fishycode's study `$FISHYDATA/archive/2026-11-25-setting-iceland-longline/`
   (its README holds what was tried and what was not taken). Held against it
   again by the study's `scripts/12_ossf_function.R`. The step `effort` calls it
-  since 2026-11-26, for each haul's soak.
+  since 2026-11-26, for each haul's soak. Which set a haul takes was worked
+  out on 2026-11-26 and built in as the default (2026.11.26.3, the user:
+  "Yes, build it"): `pick = "open"`, a haul closes the set it took and only
+  that, and a pass just before the haul gives way to an older set by the
+  valley of the vessel's own soaks; and `pass = TRUE`, a haul with nothing
+  else under it takes the vessel's last pass along its line on an earlier
+  trip. `pick = "last"` with `pass = FALSE` is the function as it was. The
+  same study folder holds the record (its README's section of 2026-11-26,
+  `scripts/15_gralududnet_score.R`, `17_ossf_built_longliners.R`).
 - The gear function, at the user's word (2026-11-25): `os_add_gear()`, Lattanzi
   et al.'s (2026) fine-tuned random forest recoded from the paper's public code
   (figshare 29647448, CC BY 4.0, in fishycode's
@@ -98,8 +106,9 @@ should actually really be just one function"; "yes, merge them").
   groups, not on the test set as the Python did. Since 2026.11.26.2 the
   forest names the gear as scikit-learn does: each tree's class shares weighed
   by the class weights, then averaged over the trees. Before, the forest's
-  average was weighed, which named the rare gears far too often. No tests
-  written for it yet (the user, 2026-11-25: "don't run test for now").
+  average was weighed, which named the rare gears far too often. Tests:
+  `tests/testthat/test-gear.R` (2026-11-26, simulated hauls: the rows and
+  columns, a group held out whole, the forest's choice redone by hand).
 
 ## Checking
 
