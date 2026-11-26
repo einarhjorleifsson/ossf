@@ -64,3 +64,22 @@ test_that("it gives ramb's trip time, its place, and its gear", {
   og <- os_add_trip_value(data.frame(trip = 1:3), g, keys = "trip", rank = c("fishers", "landing"), value = "gear", how = "most")
   for (k in names(rg)) expect_equal(og[[k]], rg[[k]], ignore_attr = TRUE, info = k)
 })
+
+test_that("no witness value at all: every trip is 'none', for either how", {
+  trips <- data.frame(trip = c("a", "b", "c"))
+  for (h in c("most", "earliest")) {
+    v <- if (h == "most") character() else as.POSIXct(character(), tz = "UTC")
+    empty <- data.frame(trip = character(), witness = character(), x = v)
+    allna <- data.frame(trip = c("a", "b"), witness = "logbook", x = if (h == "most") NA_character_ else as.POSIXct(NA, tz = "UTC"))
+    for (w in list(empty, allna)) {
+      r <- os_add_trip_value(trips, w, keys = "trip", rank = "logbook", value = "x", how = h, basis = c(logbook = "recorded"))
+      expect_identical(r$trip, trips$trip)
+      expect_true(all(is.na(r$x)))
+      expect_true(all(is.na(r$x_from)))
+      expect_identical(r$x_basis, rep("none", 3))
+      expect_identical(as.numeric(r$x_n), rep(0, 3))
+      expect_identical(r$x_outcome, rep("none", 3))
+      if (h == "earliest") expect_s3_class(r$x, "POSIXct")
+    }
+  }
+})

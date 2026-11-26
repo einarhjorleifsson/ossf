@@ -20,7 +20,8 @@
 #' * `"most"`: the value most of its rows give, or most of their `weight`; of two, the value that sorts first. For a
 #'   gear, a port. Another witness agrees when its value is the same.
 #'
-#' A witness's row with no value is no vote. A trip with no row is kept, with outcome `"none"`.
+#' A witness's row with no value is no vote. A trip with no row is kept, with outcome `"none"`; so is every trip where
+#' no witness has a value at all (no rows, or none with a value).
 #'
 #' In ramb these are two functions: `ramb::rb_add_trip_time()` (as `how = "earliest"`, its place a second call
 #' with `how = "most"`) and `ramb::rb_add_trip_gear()` (as `how = "most"`).
@@ -67,6 +68,18 @@ os_add_trip_value <- function(trips, witnesses, keys, rank, value, how = c("earl
   key_of <- function(d) do.call(paste, c(lapply(d[keys], function(v) ifelse(is.na(v), "\u0001NA", as.character(v))), sep = "\r"))
   val <- witnesses[[value]]
   ok <- !is.na(val)
+  if (!any(ok)) {   # no witness gives a value: every trip as a trip with no row, outcome "none"
+    t <- rep(NA_integer_, nrow(trips))
+    out <- list()
+    out[[added[1]]] <- val[t]
+    out[[added[2]]] <- rep(NA_character_, nrow(trips))
+    out[[added[3]]] <- rep("none", nrow(trips))
+    out[[added[4]]] <- if (how == "earliest") rep(NA, nrow(trips)) else rep(NA_real_, nrow(trips))
+    out[[added[5]]] <- rep(0, nrow(trips))
+    out[[added[6]]] <- rep("none", nrow(trips))
+    if (how == "earliest") out[[added[7]]] <- rep(NA_real_, nrow(trips))
+    return(.os_put_columns(trips, out))
+  }
   w <- data.frame(key = key_of(witnesses)[ok], witness = witnesses$witness[ok], stringsAsFactors = FALSE)
   w$rank <- match(w$witness, rank)
   w$i <- which(ok)                                              # the row of `witnesses`, for the value as given

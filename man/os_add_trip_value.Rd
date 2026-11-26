@@ -59,7 +59,8 @@ only (\code{day} is \code{TRUE}) gives way to the best lower-ranked witness with
 gear, a port. Another witness agrees when its value is the same.
 }
 
-A witness's row with no value is no vote. A trip with no row is kept, with outcome \code{"none"}.
+A witness's row with no value is no vote. A trip with no row is kept, with outcome \code{"none"}; so is every trip where
+no witness has a value at all (no rows, or none with a value).
 
 In ramb these are two functions: \code{ramb::rb_add_trip_time()} (as \code{how = "earliest"}, its place a second call
 with \code{how = "most"}) and \code{ramb::rb_add_trip_gear()} (as \code{how = "most"}).
