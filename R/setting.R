@@ -2,25 +2,25 @@
 #
 # A passive gear is hauled where it was set, so the haul is the witness for the setting, as a hauler sensor is for the
 # hauling. The fundamentals are those of the hauling: a speed range from the best source there is (os_add_fishing(),
-# here measured from the positions on a later haul's line), events by the ground rule (os_add_hauls()), nothing
-# dropped, every value with its basis. Worked out on 2026-11-25 on a small-scale static-gear case study and on the Icelandic longliners of 2018 (fishycode's study
-# $FISHYDATA/archive/2026-11-25-setting-iceland-longline/), counts only:
+# here measured from the positions on a later haul's line), events by the ground rule (os_add_hauls()), nothing dropped,
+# every value with its basis. Worked out on 2026-11-25 on a small-scale static-gear case study and on the Icelandic
+# longliners of 2018 (fishycode's study $FISHYDATA/archive/2026-11-25-setting-iceland-longline/), counts only:
 #  - against the logged set start in Iceland (the set times that are not the logbook app's own arithmetic), the set's
 #    start within the hour on 78-80 %, iapesca's finder (as ramb recodes it) 64 %, the vessel's usual soak 62 %;
-#  - the reach is the gear's scale: 50-100 m on the case study's strings, 500 m and more on the Icelandic lines. The share of
-#    hauls whose set is as long as the haul peaks at the reach the outside witnesses favour, in both, so the reach is
-#    picked by it;
+#  - the reach is the gear's scale: 50-100 m on the case study's strings, 500 m and more on the Icelandic lines. The
+#    share of hauls whose set is as long as the haul peaks at the reach the outside witnesses favour, in both, so the
+#    reach is picked by it;
 #  - distances are to a line, not position to position: at pings minutes apart a line passes between two positions.
-# Tried and not taken: the closest earlier pass with no reach (an earlier day's pass on the same ground), the valley
-# of the distances (no clear valley), a recurrence plot on the ground covered (as good on long lines at a wide reach,
+# Tried and not taken: the closest earlier pass with no reach (an earlier day's pass on the same ground), the valley of
+# the distances (no clear valley), a recurrence plot on the ground covered (as good on long lines at a wide reach,
 # weaker on short strings); and a clause for the run in to a haul (a setting event on the line of the haul that next
-# begins in its group, with no more time before it than the event took, is no set): on the case study it took out two thirds of
-# the events of a position or two and raised the agreement with another soak method from 87.7 to 90.1 %, but in Iceland,
-# where a line is hauled soon after it is set, it took out the sets themselves (79.4 to 31.2 %). So it is no part of
-# the rule: it is the argument `run_in`, off unless asked for (the user, 2026-11-25: "Should we actually have an
-# option argument for the function, the run in-rule"; "Yes, add it"). Whether the data can switch it was measured
-# (the time from a setting event to its haul: two kinds on the case study, one broad spread in Iceland, where the short ones are
-# sets) and is open: a valley is found in both, so it needs a test of whether there are two kinds at all.
+# begins in its group, with no more time before it than the event took, is no set): on the case study it took out two
+# thirds of the events of a position or two and raised the agreement with another soak method from 87.7 to 90.1 %, but
+# in Iceland, where a line is hauled soon after it is set, it took out the sets themselves (79.4 to 31.2 %). So it is no
+# part of the rule: it is the argument `run_in`, off unless asked for (the user, 2026-11-25: "Should we actually have an
+# option argument for the function, the run in-rule"; "Yes, add it"). Whether the data can switch it was measured (the
+# time from a setting event to its haul: two kinds on the case study, one broad spread in Iceland, where the short ones
+# are sets) and is open: a valley is found in both, so it needs a test of whether there are two kinds at all.
 #
 # Drafted with AI assistance (Claude), 2026-11-25; not yet checked by a person.
 
@@ -315,8 +315,8 @@ os_add_setting <- function(pings, by = NULL, haul = "haul_id", reach_m = c(25, 5
        fit = mean(!is.na(ratio) & is.finite(ratio) & ratio >= 0.8 & ratio < 1.25))
 }
 
-# The line through each key's positions (in time order, within a group): the positions, and points every `step` metres ----
-# between two consecutive ones that are further apart
+# The line through each key's positions (in time order, within a group): the positions, and points every `step` metres
+# ---- between two consecutive ones that are further apart
 .os_line_points <- function(key, g, t, x, y, step) {
   n <- length(t)
   out <- data.frame(key = key, t = t, x = x, y = y)

@@ -1,7 +1,7 @@
 Package: ossf
 Type: Package
 Title: From Vessel Tracks to Fishing
-Version: 2026.11.25
+Version: 2026.11.26
 Authors@R: person("Einar", "Hjörleifsson", role = c("aut", "cre"), email = "einar.hjorleifsson@gmail.com")
 Description: The steps from a vessel's pings to its fishing: the time put
     on UTC, the pings flagged (every ping in one outcome), port calls, trips,
@@ -11,6 +11,8 @@ Description: The steps from a vessel's pings to its fishing: the time put
     after any step. Some functions are ossf's own; others are copied from the
     'ramb' package as they are, the names changed.
 License: GPL (>= 3)
+URL: https://github.com/einarhjorleifsson/ossf
+BugReports: https://github.com/einarhjorleifsson/ossf/issues
 Encoding: UTF-8
 Depends:
     R (>= 4.1.0)

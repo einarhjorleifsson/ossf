@@ -17,6 +17,14 @@ differ (\code{rb_} is \code{os_}). They run in DuckDB as ramb's do, and give ram
 \item \strong{Maps}: \code{\link[=os_map]{os_map()}}, the pings after any stage of the flow, drawn by ogis where it is installed.
 }
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/einarhjorleifsson/ossf}
+  \item Report bugs at \url{https://github.com/einarhjorleifsson/ossf/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Einar Hjörleifsson \email{einar.hjorleifsson@gmail.com}
 

@@ -1,10 +1,10 @@
 # Hauls from the fishing calls: events built afterwards, the calls never changed ------------------------------------------
 #
-# The fifth of the few principles (fishycode's session of 2026-11-25, after the ablation): hauls as events are built from the calls afterwards, and never change them. The one
-# rule that joins them is the pause guard designed against a hauler sensor that day:
-# a pause is an interruption of the work, so it is no longer than the work on either side of it. Its length is the
-# ground the vessel covers. Measured in time instead, the guard joined the strings of a static gear across the steaming
-# between them, short in time but long in ground. No value is given.
+# The fifth of the few principles (fishycode's session of 2026-11-25, after the ablation): hauls as events are built
+# from the calls afterwards, and never change them. The one rule that joins them is the pause guard designed against a
+# hauler sensor that day: a pause is an interruption of the work, so it is no longer than the work on either side of it.
+# Its length is the ground the vessel covers. Measured in time instead, the guard joined the strings of a static gear
+# across the steaming between them, short in time but long in ground. No value is given.
 #
 # Drafted with AI assistance (Claude), 2026-11-25; not yet checked by a person.
 

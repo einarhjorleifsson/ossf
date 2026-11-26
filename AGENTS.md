@@ -7,23 +7,31 @@ the essentials"); not yet read by the maintainer.*
 
 ## What ossf is
 
-An R package with the steps from a vessel's pings to its fishing, a lighter alternative to ramb. The name: "o" is not, "ssf"
-is small-scale fisheries. The functions by step are listed in `README.md`.
+An R package with the steps from a vessel's pings to its fishing, a lighter
+alternative to ramb. The name: "o" is not, "ssf" is small-scale fisheries. The
+functions by step are listed in `README.md`.
 
-Created 2026-11-25; a git repository since the same day, its first commit at the maintainer's word. Not installed:
-it is loaded from source (`pkgload::load_all("~/R/Pakkar/ossf")`). Commit, push or install only at the
+Created 2026-11-25; a git repository since the same day, its first commit at the
+maintainer's word. On GitHub since 2026-11-26
+(<https://github.com/einarhjorleifsson/ossf>, public), pushed at the
+maintainer's word after a check that nothing in it names the projects it was
+tried on. Not installed: it is loaded from source
+(`pkgload::load_all("~/R/Pakkar/ossf")`). Commit, push or install only at the
 maintainer's word. The compiled files (`src/*.o`, `src/*.so`) are not tracked.
 
 ## Three kinds of function
 
 - **ossf's own** (`R/fishing.R`, `haul.R`, `setting.R`, `polygon.R`,
-  `trip_value.R`, `time.R`, `score.R`, `map.R`, `effort.R`): written for ossf, base R where it can (sf for
-  polygons, ogis for the map, which is only suggested). Edited here.
-- **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb function the flow's steps call, with everything it calls, the C++ included,
-  text unchanged but for the names (`rb_` to `os_`). Made by
-  `data-raw/copy_from_ramb.R` from ramb's source (`RAMB_SRC`, default
-  `~/R/Pakkar/ramb`); `data-raw/copy_from_ramb.csv` lists each object with its
-  ramb file and lines. Each file's head names the ramb version and commit.
+  `trip_value.R`, `time.R`, `score.R`, `map.R`, `effort.R`): written for ossf,
+  base R where it can (sf for polygons, ogis for the map, which is only
+  suggested). Edited here.
+- **Copies of ramb** (`R/ramb_*.R`, `src/`, `inst/COPYRIGHTS`): every ramb
+  function the flow's steps call, with everything it calls, the C++ included,
+  text unchanged but for the names (`rb_` to `os_`) and a comment that names a
+  case study, worded generically. Made by `data-raw/copy_from_ramb.R` from
+  ramb's source (`RAMB_SRC`, default `~/R/Pakkar/ramb`);
+  `data-raw/copy_from_ramb.csv` lists each object with its ramb file and lines.
+  Each file's head names the ramb version and commit.
 - **A copy of fishycode's study of plan 086** (`R/study_flag_ping.R`):
   `proto_flag_ping()` as `os_flag_ping()`, made by the same script from
   `$FISHYDATA/archive/2026-11-22-robust-ping-flags/R/proto.R` (or
@@ -65,11 +73,12 @@ should actually really be just one function"; "yes, merge them").
 - Maps are served on this computer only (`127.0.0.1`), never published.
 - Every file says it was drafted with AI assistance (Claude) and when.
 
-- The setting function, at the user's word (2026-11-25: "Think we should put
-  the Haul-witnessed approach as a function in ossf now"): `os_add_setting()`,
-  from fishycode's study
-  `$FISHYDATA/archive/2026-11-25-setting-iceland-longline/` (its README holds
-  what was tried and what was not taken). Held against it again by the study's `scripts/12_ossf_function.R`. The step `effort` calls it since 2026-11-26, for each haul's soak.
+- The setting function, at the user's word (2026-11-25: "Think we should put the
+  Haul-witnessed approach as a function in ossf now"): `os_add_setting()`, from
+  fishycode's study `$FISHYDATA/archive/2026-11-25-setting-iceland-longline/`
+  (its README holds what was tried and what was not taken). Held against it
+  again by the study's `scripts/12_ossf_function.R`. The step `effort` calls it
+  since 2026-11-26, for each haul's soak.
 
 ## Checking
 
@@ -77,7 +86,9 @@ should actually really be just one function"; "yes, merge them").
   functions, and each merged one against ramb's pair where ramb is installed.
 - `R CMD check` (build in a temporary folder): the only warning left is R's own
   `Boolean.h` with this compiler, which ramb has too.
-- Against ramb on real data: checks kept outside this package ran every ramb call the steps make, ramb's and ossf's side by side. On 2026-11-25 every call was identical.
+- Against ramb on real data: checks kept outside this package ran every ramb
+  call the steps make, ramb's and ossf's side by side. On 2026-11-25 every call
+  was identical.
 
 ## Where things are
 
@@ -87,9 +98,9 @@ should actually really be just one function"; "yes, merge them").
 
 ## Open
 
-- Nothing is added to ossf on the way (the maintainer, 2026-11-25: "there should be no
-  missing functions in ossf - if there are flag that rather than proceeding
-  directly through").
+- Nothing is added to ossf on the way (the maintainer, 2026-11-25: "there should
+  be no missing functions in ossf - if there are flag that rather than
+  proceeding directly through").
 - The fishing rule ossf offers in place of the study's, at the user's word
   (2026-11-25: "lets implement your recommendation as a function in ossf"):
   `os_add_fishing()` (the call) then `os_add_hauls()` (hauls from the call,

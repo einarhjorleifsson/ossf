@@ -3,8 +3,9 @@
 *Drafted with AI assistance (Claude), 2026-11-25, at the maintainer's request;
 not yet checked by a person.*
 
-The steps from a vessel's pings to its fishing, a lighter alternative to ramb. The name: "o" is not, "ssf" is small-scale
-fisheries (the maintainer, 2026-11-25).
+The steps from a vessel's pings to its fishing, a lighter alternative to ramb.
+The name: "o" is not, "ssf" is small-scale fisheries (the maintainer,
+2026-11-25).
 
 ## Three kinds of function
 
@@ -17,8 +18,8 @@ fisheries (the maintainer, 2026-11-25).
   as they are"). Only the names differ: `rb_` is `os_`. They run in DuckDB as
   ramb's do and give ramb's results. `data-raw/copy_from_ramb.csv` lists every
   object, with its ramb file and lines.
-- **A copy from fishycode's study of plan 086**: `os_flag_ping()`, the flags in one call, bound for ramb and not in it
-  yet. Copied by the same script.
+- **A copy from fishycode's study of plan 086**: `os_flag_ping()`, the flags in
+  one call, bound for ramb and not in it yet. Copied by the same script.
 
 A copy is never edited here: a change is made at its source and
 `Rscript data-raw/copy_from_ramb.R` run again.
@@ -76,24 +77,26 @@ in their place, checked to give both results:
 - `os_add_trip_value()` for ramb's trip time and trip gear (the maintainer:
   "yes, merge them"): which witness's value a trip takes, the witness's value
   its earliest (a time) or its most usual (a gear, a port). One value a call:
-  ramb's port beside the departure time is a second call. On real tracks it gives ramb's results on every call made.
+  ramb's port beside the departure time is a second call. On real tracks it
+  gives ramb's results on every call made.
 
 ramb's `rb_flag_ping_land()` and `rb_flag_ping_port()` ask one question, which
 polygon holds a ping (the maintainer: "a classical ping-in-polygon question.
 they should actually really be just one function"). ossf has
-`os_flag_ping_polygon()` in their place; on real tracks it gives both ramb flags' results on every record. An edge is straight in longitude and latitude, as in
-ramb's port flag; ramb's land flag draws it straight on a projection, which
-moves a long edge by tens of metres.
+`os_flag_ping_polygon()` in their place; on real tracks it gives both ramb
+flags' results on every record. An edge is straight in longitude and latitude,
+as in ramb's port flag; ramb's land flag draws it straight on a projection,
+which moves a long edge by tens of metres.
 
 ## Why the fishing rule is so little
 
 The rule was grown on a small-scale static-gear fishery's tracks with more in it
 (straightness, a weave, end trimming, hauls joined across gaps, pauses), and
-each piece was then scored against witnesses that never read the track: a
-hauler sensor there, and logbook haul and tow times on the Icelandic fleet.
-The speed alone scored as well as the whole rule on both; what moved the score
-was the speed range. The record is kept outside this package (fishycode's studies). No case-study data is in this
-package; its tests use simulated tracks.
+each piece was then scored against witnesses that never read the track: a hauler
+sensor there, and logbook haul and tow times on the Icelandic fleet. The speed
+alone scored as well as the whole rule on both; what moved the score was the
+speed range. The record is kept outside this package (fishycode's studies). No
+case-study data is in this package; its tests use simulated tracks.
 
 ## What is given, not taken from the data
 
@@ -107,4 +110,4 @@ package; its tests use simulated tracks.
 
 ## Not in it
 
-Setting and soak; gear from the track; effort and catch.
+A haul's gear from the track; links to logbook or landing records.

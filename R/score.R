@@ -1,7 +1,7 @@
 # A call against a witness, every row in one outcome. ossf's own, in base R.
 #
-# Made general from the scoring that checks wrote again by hand (recall, precision, F1), at the maintainer's word (2026-11-25). Drafted with AI assistance (Claude),
-# 2026-11-25; not yet checked by a person.
+# Made general from the scoring that checks wrote again by hand (recall, precision, F1), at the maintainer's word
+# (2026-11-25). Drafted with AI assistance (Claude), 2026-11-25; not yet checked by a person.
 
 #' Score a call against a witness, every row in one outcome
 #'
